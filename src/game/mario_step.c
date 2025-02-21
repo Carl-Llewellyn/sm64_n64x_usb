@@ -342,7 +342,7 @@ int formatMarioPos(float pos, char *buffer, char cPos) {
         len++;
     }
     return len; 
-
+}
 void sendMarioPosUSB() {
     char buffer[16]; 
     int len = 0;
