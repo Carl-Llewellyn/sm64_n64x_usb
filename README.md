@@ -2,8 +2,8 @@
 
 To run docker:
 
-docker run --rm -v ${PWD}:/sm64 sm64_docker_update2 make clean
-docker run --rm -v ${PWD}:/sm64 sm64_docker_update2 make VERSION=us COMPARE=0
+`docker run --rm -v ${PWD}:/sm64 sm64_docker_update2 make clean`
+`docker run --rm -v ${PWD}:/sm64 sm64_docker_update2 make VERSION=us COMPARE=0`
 
 
 # Super Mario 64
