@@ -32,6 +32,8 @@
 #include "save_file.h"
 #include "sound_init.h"
 #include "rumble_init.h"
+#include "game/level_update.h"
+#include <usb.h>
 
 u32 unused80339F10;
 u8 unused80339F1C[20];
@@ -66,8 +68,10 @@ s16 set_mario_animation(struct MarioState *m, s32 targetAnimID) {
     struct Animation *targetAnim = m->animList->bufTarget;
 
     if (load_patchable_table(m->animList, targetAnimID)) {
-        targetAnim->values = (void *) VIRTUAL_TO_PHYSICAL((u8 *) targetAnim + (uintptr_t) targetAnim->values);
-        targetAnim->index = (void *) VIRTUAL_TO_PHYSICAL((u8 *) targetAnim + (uintptr_t) targetAnim->index);
+        targetAnim->values =
+            (void *) VIRTUAL_TO_PHYSICAL((u8 *) targetAnim + (uintptr_t) targetAnim->values);
+        targetAnim->index =
+            (void *) VIRTUAL_TO_PHYSICAL((u8 *) targetAnim + (uintptr_t) targetAnim->index);
     }
 
     if (o->header.gfx.animInfo.animID != targetAnimID) {
@@ -99,8 +103,10 @@ s16 set_mario_anim_with_accel(struct MarioState *m, s32 targetAnimID, s32 accel)
     struct Animation *targetAnim = m->animList->bufTarget;
 
     if (load_patchable_table(m->animList, targetAnimID)) {
-        targetAnim->values = (void *) VIRTUAL_TO_PHYSICAL((u8 *) targetAnim + (uintptr_t) targetAnim->values);
-        targetAnim->index = (void *) VIRTUAL_TO_PHYSICAL((u8 *) targetAnim + (uintptr_t) targetAnim->index);
+        targetAnim->values =
+            (void *) VIRTUAL_TO_PHYSICAL((u8 *) targetAnim + (uintptr_t) targetAnim->values);
+        targetAnim->index =
+            (void *) VIRTUAL_TO_PHYSICAL((u8 *) targetAnim + (uintptr_t) targetAnim->index);
     }
 
     if (o->header.gfx.animInfo.animID != targetAnimID) {
@@ -322,8 +328,8 @@ void play_mario_landing_sound(struct MarioState *m, u32 soundBits) {
  * played once per action.
  */
 void play_mario_landing_sound_once(struct MarioState *m, u32 soundBits) {
-    play_mario_action_sound(
-        m, (m->flags & MARIO_METAL_CAP) ? SOUND_ACTION_METAL_LANDING : soundBits, 1);
+    play_mario_action_sound(m, (m->flags & MARIO_METAL_CAP) ? SOUND_ACTION_METAL_LANDING : soundBits,
+                            1);
 }
 
 /**
@@ -349,8 +355,10 @@ void play_mario_heavy_landing_sound_once(struct MarioState *m, u32 soundBits) {
  */
 void play_mario_sound(struct MarioState *m, s32 actionSound, s32 marioSound) {
     if (actionSound == SOUND_ACTION_TERRAIN_JUMP) {
-        play_mario_action_sound(m, (m->flags & MARIO_METAL_CAP) ? (s32) SOUND_ACTION_METAL_JUMP
-                                                                : (s32) SOUND_ACTION_TERRAIN_JUMP, 1);
+        play_mario_action_sound(m,
+                                (m->flags & MARIO_METAL_CAP) ? (s32) SOUND_ACTION_METAL_JUMP
+                                                             : (s32) SOUND_ACTION_TERRAIN_JUMP,
+                                1);
     } else {
         play_sound_if_no_flag(m, actionSound, MARIO_ACTION_SOUND_PLAYED);
     }
@@ -1421,7 +1429,7 @@ void set_submerged_cam_preset_and_spawn_bubbles(struct MarioState *m) {
     s16 camPreset;
 
     if ((m->action & ACT_GROUP_MASK) == ACT_GROUP_SUBMERGED) {
-        heightBelowWater = (f32)(m->waterLevel - 80) - m->pos[1];
+        heightBelowWater = (f32) (m->waterLevel - 80) - m->pos[1];
         camPreset = m->area->camera->mode;
 
         if (m->action & ACT_FLAG_METAL_WATER) {
@@ -1440,7 +1448,7 @@ void set_submerged_cam_preset_and_spawn_bubbles(struct MarioState *m) {
             // As long as Mario isn't drowning or at the top
             // of the water with his head out, spawn bubbles.
             if (!(m->action & ACT_FLAG_INTANGIBLE)) {
-                if ((m->pos[1] < (f32)(m->waterLevel - 160)) || (m->faceAngle[0] < -0x800)) {
+                if ((m->pos[1] < (f32) (m->waterLevel - 160)) || (m->faceAngle[0] < -0x800)) {
                     m->particleFlags |= PARTICLE_BUBBLE;
                 }
             }
@@ -1693,11 +1701,84 @@ void func_sh_8025574C(void) {
 }
 #endif
 
+int formatMarioPos(float pos, char *buffer, char cPos) {
+    float value = pos;
+    int len = 0;
+
+    int int_part = (int) value;
+    int frac_part = (int) ((value - int_part) * 100);
+
+    if (frac_part < 0) {
+        frac_part = -frac_part;
+    }
+
+    sprintf(buffer, "%c%d.%02d", cPos, int_part, frac_part);
+
+    while (buffer[len] != '\0') {
+        len++;
+    }
+    return len;
+}
+
+void sendMarioPosUSB() {
+    char buffer[16];
+    int len = 0;
+
+    len = formatMarioPos(gMarioStates[0].pos[0], buffer, 'x');
+    usb_write(DATATYPE_TEXT, buffer, len + 1);
+
+    len = formatMarioPos(gMarioStates[0].pos[1], buffer, 'y');
+    usb_write(DATATYPE_TEXT, buffer, len + 1);
+
+    len = formatMarioPos(gMarioStates[0].pos[2], buffer, 'z');
+    usb_write(DATATYPE_TEXT, buffer, len + 1);
+}
+
+void cc(char s1[], char s2[], int s1CpStart) {
+    s1 = s1 + s1CpStart;
+    while (*s1++ = *s2++)
+        ;
+}
+
+#define BUFFSIZE 16
+int timer = 0;
+void sendMarioPosUSBConcat() {
+    char xBuff[BUFFSIZE];
+    char yBuff[BUFFSIZE];
+    char zBuff[BUFFSIZE];
+    int xlen = 0;
+    int ylen = 0;
+    int zlen = 0;
+    char out[16 * 3];
+    if (timer == 10) {
+        timer = 0;
+
+       // xlen = formatMarioPos(gMarioStates[0].pos[0], xBuff, 'x');
+       // ylen += formatMarioPos(gMarioStates[0].pos[1], yBuff, 'y');
+       // zlen += formatMarioPos(gMarioStates[0].pos[2], zBuff, 'z');
+
+        xlen = formatMarioPos(gMarioStates[0].pos[0], xBuff, 'x');
+        ylen += formatMarioPos(gMarioStates[0].pos[2], yBuff, 'y'); 
+        zlen += formatMarioPos(gMarioStates[0].pos[1], zBuff, 'z'); 
+
+        cc(out, xBuff, 0);
+        cc(out, yBuff, xlen);
+        cc(out, zBuff, xlen + ylen);
+
+        // printf("%s\n", out);
+        // printf("%d", (xlen + ylen + zlen) + 1);
+        usb_write(DATATYPE_TEXT, out, (xlen + ylen + zlen) + 1);
+    }
+    timer++;
+}
+
 /**
  * Main function for executing Mario's behavior.
  */
 s32 execute_mario_action(UNUSED struct Object *o) {
     s32 inLoop = TRUE;
+    sendMarioPosUSBConcat();
+
 
     if (gMarioState->action) {
         gMarioState->marioObj->header.gfx.node.flags &= ~GRAPH_RENDER_INVISIBLE;
@@ -1777,6 +1858,7 @@ s32 execute_mario_action(UNUSED struct Object *o) {
 
         return gMarioState->particleFlags;
     }
+
 
     return 0;
 }

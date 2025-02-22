@@ -1,8 +1,8 @@
 // 0x07010D08 - 0x07010DB4
 const MacroObject castle_grounds_seg7_macro_objs[] = {
-    MACRO_OBJECT_WITH_BHV_PARAM(/*preset*/ macro_wooden_signpost,            /*yaw*/ 262, /*pos*/  5288,   722,  -800, /*bhvParam*/ DIALOG_050),
+   // MACRO_OBJECT               (/*preset*/ macro_goomba,                    /*yaw*/   0, /*pos*/ -288,   722,  -800),
     MACRO_OBJECT_WITH_BHV_PARAM(/*preset*/ macro_wooden_signpost,            /*yaw*/  90, /*pos*/  1740,    35,  2500, /*bhvParam*/ DIALOG_065),
-    MACRO_OBJECT_WITH_BHV_PARAM(/*preset*/ macro_wooden_signpost,            /*yaw*/   0, /*pos*/ -1566,   260,  3503, /*bhvParam*/ DIALOG_167),
+    MACRO_OBJECT               (/*preset*/ macro_goomba,                    /*yaw*/   0, /*pos*/ -1566,   260,  3503),
     MACRO_OBJECT_WITH_BHV_PARAM(/*preset*/ macro_wooden_signpost,            /*yaw*/  82, /*pos*/ -4666,   260,   922, /*bhvParam*/ DIALOG_051),
     MACRO_OBJECT               (/*preset*/ macro_hidden_1up_in_pole,         /*yaw*/   0, /*pos*/ -6270,   975, -2145),
     MACRO_OBJECT               (/*preset*/ macro_1up,                        /*yaw*/   0, /*pos*/  -440,  3180, -5000),

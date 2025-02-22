@@ -8,8 +8,7 @@
 #include "game_init.h"
 #include "interaction.h"
 #include "mario_step.h"
-#include "game/level_update.h"
-#include <usb.h>
+
 
 static s16 sMovingSandSpeeds[] = { 12, 8, 4, 0 };
 
@@ -322,40 +321,6 @@ static s32 perform_ground_quarter_step(struct MarioState *m, Vec3f nextPos) {
     return GROUND_STEP_NONE;
 }
 
-// Formatting function to convert position to string
-int formatMarioPos(float pos, char *buffer, char cPos) {
-    float value = pos;
-    int len = 0;
-
-    // Truncate to 2 decimal places using integer math
-    int int_part = (int)value;
-    int frac_part = (int)((value - int_part) * 100);
-
-    // Handle negative fractional part
-    if (frac_part < 0) {
-        frac_part = -frac_part;
-    }
-
-    sprintf(buffer, "%c%d.%02d", cPos, int_part, frac_part);
-
-    while (buffer[len] != '\0') {
-        len++;
-    }
-    return len; 
-}
-void sendMarioPosUSB() {
-    char buffer[16]; 
-    int len = 0;
-
-    len = formatMarioPos(gMarioStates[0].pos[0], buffer, 'x');
-    usb_write(DATATYPE_TEXT, buffer, len + 1); 
-
-    len = formatMarioPos(gMarioStates[0].pos[1], buffer, 'y');
-    usb_write(DATATYPE_TEXT, buffer, len + 1);
-
-    len = formatMarioPos(gMarioStates[0].pos[2], buffer, 'z');
-    usb_write(DATATYPE_TEXT, buffer, len + 1);
-}
 
 s32 perform_ground_step(struct MarioState *m) {
     s32 i;
@@ -380,8 +345,6 @@ s32 perform_ground_step(struct MarioState *m) {
     if (stepResult == GROUND_STEP_HIT_WALL_CONTINUE_QSTEPS) {
         stepResult = GROUND_STEP_HIT_WALL;
     }
-
-    sendMarioPosUSB();
 
     return stepResult;
 }

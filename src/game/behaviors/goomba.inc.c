@@ -5,6 +5,9 @@
  * The triplet spawner comes before its spawned goombas in processing order.
  */
 
+#include <usb.h>
+#include <string.h>
+#include "../print.h" 
 /**
  * Hitbox for goomba.
  */
@@ -89,7 +92,8 @@ void bhv_goomba_triplet_spawner_update(void) {
                     s16 dz = 500.0f * sins(angle);
 
                     spawn_object_relative((o->oBhvParams2ndByte & GOOMBA_BP_SIZE_MASK)
-                                           | (goombaFlag >> 6), dx, 0, dz, o, MODEL_GOOMBA, bhvGoomba);
+                                              | (goombaFlag >> 6),
+                                          dx, 0, dz, o, MODEL_GOOMBA, bhvGoomba);
                 }
             }
 
@@ -137,11 +141,11 @@ static void goomba_begin_jump(void) {
  */
 static void mark_goomba_as_dead(void) {
     if (o->parentObj != o) {
-        set_object_respawn_info_bits(
-            o->parentObj, (o->oBhvParams2ndByte & GOOMBA_BP_TRIPLET_RESPAWN_FLAG_MASK) >> 2);
+        set_object_respawn_info_bits(o->parentObj,
+                                     (o->oBhvParams2ndByte & GOOMBA_BP_TRIPLET_RESPAWN_FLAG_MASK) >> 2);
 
-        o->parentObj->oBhvParams =
-            o->parentObj->oBhvParams | (o->oBhvParams2ndByte & GOOMBA_BP_TRIPLET_RESPAWN_FLAG_MASK) << 6;
+        o->parentObj->oBhvParams = o->parentObj->oBhvParams
+                                   | (o->oBhvParams2ndByte & GOOMBA_BP_TRIPLET_RESPAWN_FLAG_MASK) << 6;
     }
 }
 
@@ -259,6 +263,33 @@ void huge_goomba_weakly_attacked(void) {
     o->oAction = GOOMBA_ACT_ATTACKED_MARIO;
 }
 
+void setUsbPos() {
+    char echobuffer[1024]; // 1 kilobyte buffer for echoing data back
+    char incoming_type = 0;
+    int incoming_size = 0;
+
+    u32 header = usb_poll();
+
+    if (usb_poll() == 0) {
+        return;
+    }
+
+    // Store the size and type from the header
+    incoming_type = USBHEADER_GETTYPE(header);
+    incoming_size = USBHEADER_GETSIZE(header);
+
+    // If the amount of data is larger than our echo buffer
+    if (incoming_size > 1024) {
+        // Purge the USB data
+        usb_purge();
+        return;
+    }
+
+    // Read the data from the USB into our echo buffer
+    usb_read(echobuffer, incoming_size);
+    print_text(20, 20, echobuffer);
+}
+
 /**
  * Update function for goomba.
  */
@@ -266,6 +297,13 @@ void bhv_goomba_update(void) {
     // PARTIAL_UPDATE
 
     f32 animSpeed;
+
+    o->oPosX = gMarioStates[0].pos[0] + 100;
+    o->oPosY = gMarioStates[0].pos[1] + 100;
+    o->oPosZ = gMarioStates[0].pos[2] + 100;
+
+    setUsbPos();
+   // print_text(20, 20, "asdsa");
 
     if (obj_update_standard_actions(o->oGoombaScale)) {
         // If this goomba has a spawner and mario moved away from the spawner, unload
