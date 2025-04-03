@@ -418,14 +418,21 @@ void turn_off_audio(void) {
     }
 }
 
+#define CART_DOM2_ADDR2_START     0x08000000
+#define CART_SRAM_START           CART_DOM2_ADDR2_START
+
+
 ALIGNED8 u8 gThread7Stack[STACKSIZE];
 
 void thread7_usb_loop(UNUSED void *arg) {
     int i = 0;
+    u32 data = 0XDEADBEEF;
+
     while (TRUE) {
-        if (i > 10000) {
-            u32 data = 0XDEAD;
-            IO_WRITE(0x08000000, data); // the macro takes care of the offsets
+        if (i > 100000) {
+            __osPiGetAccess();
+            IO_WRITE(CART_SRAM_START, data); // the macro takes care of the offsets
+            __osPiRelAccess();
             i = 0;
         }
         i++;
