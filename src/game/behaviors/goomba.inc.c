@@ -5,9 +5,12 @@
  * The triplet spawner comes before its spawned goombas in processing order.
  */
 
+#include <stdlib.h>
 #include <usb.h>
 #include <string.h>
-#include "../print.h" 
+#include "../print.h"
+#include <stdlib.h>
+
 /**
  * Hitbox for goomba.
  */
@@ -264,9 +267,10 @@ void huge_goomba_weakly_attacked(void) {
 }
 
 void setUsbPos() {
-    char echobuffer[1024]; // 1 kilobyte buffer for echoing data back
+    char buff[46]; // 1 kilobyte buffer for echoing data back
     char incoming_type = 0;
     int incoming_size = 0;
+    char str[50] = {0};
 
     u32 header = usb_poll();
 
@@ -278,16 +282,23 @@ void setUsbPos() {
     incoming_type = USBHEADER_GETTYPE(header);
     incoming_size = USBHEADER_GETSIZE(header);
 
-    // If the amount of data is larger than our echo buffer
-    if (incoming_size > 1024) {
+    // If the amount of data is larger than our buffer
+    if (incoming_size > 46) {
         // Purge the USB data
         usb_purge();
         return;
     }
 
-    // Read the data from the USB into our echo buffer
-    usb_read(echobuffer, incoming_size);
-    print_text(20, 20, echobuffer);
+    // Read the data from the USB into buffer
+    usb_read(buff, incoming_size);
+
+    // o->oPosX = gMarioStates[0].pos[0] + 100;
+    //  o->oPosY = gMarioStates[0].pos[1] + 100;
+    // o->oPosZ = gMarioStates[0].pos[2] + 100;
+   // sprintf(&str[0], "%d\n", gMarioStates[0].pos[0]);
+   buff[incoming_size] = '\0';
+    print_text(20, 20, buff);
+
 }
 
 /**
@@ -298,12 +309,10 @@ void bhv_goomba_update(void) {
 
     f32 animSpeed;
 
-    o->oPosX = gMarioStates[0].pos[0] + 100;
-    o->oPosY = gMarioStates[0].pos[1] + 100;
-    o->oPosZ = gMarioStates[0].pos[2] + 100;
+    //setUsbPos();
 
-    setUsbPos();
-   // print_text(20, 20, "asdsa");
+    // print_text(20, 20, "asdsa");
+    // sendMarioPosUSBConcat();
 
     if (obj_update_standard_actions(o->oGoombaScale)) {
         // If this goomba has a spawner and mario moved away from the spawner, unload

@@ -1701,83 +1701,13 @@ void func_sh_8025574C(void) {
 }
 #endif
 
-int formatMarioPos(float pos, char *buffer, char cPos) {
-    float value = pos;
-    int len = 0;
 
-    int int_part = (int) value;
-    int frac_part = (int) ((value - int_part) * 100);
-
-    if (frac_part < 0) {
-        frac_part = -frac_part;
-    }
-
-    sprintf(buffer, "%c%d.%02d", cPos, int_part, frac_part);
-
-    while (buffer[len] != '\0') {
-        len++;
-    }
-    return len;
-}
-
-void sendMarioPosUSB() {
-    char buffer[16];
-    int len = 0;
-
-    len = formatMarioPos(gMarioStates[0].pos[0], buffer, 'x');
-    usb_write(DATATYPE_TEXT, buffer, len + 1);
-
-    len = formatMarioPos(gMarioStates[0].pos[1], buffer, 'y');
-    usb_write(DATATYPE_TEXT, buffer, len + 1);
-
-    len = formatMarioPos(gMarioStates[0].pos[2], buffer, 'z');
-    usb_write(DATATYPE_TEXT, buffer, len + 1);
-}
-
-void cc(char s1[], char s2[], int s1CpStart) {
-    s1 = s1 + s1CpStart;
-    while (*s1++ = *s2++)
-        ;
-}
-
-#define BUFFSIZE 16
-int timer = 0;
-void sendMarioPosUSBConcat() {
-    char xBuff[BUFFSIZE];
-    char yBuff[BUFFSIZE];
-    char zBuff[BUFFSIZE];
-    int xlen = 0;
-    int ylen = 0;
-    int zlen = 0;
-    char out[16 * 3];
-    if (timer == 10) {
-        timer = 0;
-
-       // xlen = formatMarioPos(gMarioStates[0].pos[0], xBuff, 'x');
-       // ylen += formatMarioPos(gMarioStates[0].pos[1], yBuff, 'y');
-       // zlen += formatMarioPos(gMarioStates[0].pos[2], zBuff, 'z');
-
-        xlen = formatMarioPos(gMarioStates[0].pos[0], xBuff, 'x');
-        ylen += formatMarioPos(gMarioStates[0].pos[2], yBuff, 'y'); 
-        zlen += formatMarioPos(gMarioStates[0].pos[1], zBuff, 'z'); 
-
-        cc(out, xBuff, 0);
-        cc(out, yBuff, xlen);
-        cc(out, zBuff, xlen + ylen);
-
-        // printf("%s\n", out);
-        // printf("%d", (xlen + ylen + zlen) + 1);
-        usb_write(DATATYPE_TEXT, out, (xlen + ylen + zlen) + 1);
-    }
-    timer++;
-}
 
 /**
  * Main function for executing Mario's behavior.
  */
 s32 execute_mario_action(UNUSED struct Object *o) {
     s32 inLoop = TRUE;
-    sendMarioPosUSBConcat();
 
 
     if (gMarioState->action) {

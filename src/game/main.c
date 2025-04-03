@@ -1,6 +1,5 @@
 #include <ultra64.h>
 #include <stdio.h>
-
 #include "sm64.h"
 #include "audio/external.h"
 #include "game_init.h"
@@ -12,7 +11,7 @@
 #include "segment_symbols.h"
 #include "main.h"
 #include "rumble_init.h"
-#include <usb.h>
+#include <PR/rcp.h>
 
 // Message IDs
 #define MESG_SP_COMPLETE 100
@@ -26,6 +25,8 @@ OSThread gIdleThread;
 OSThread gMainThread;
 OSThread gGameLoopThread;
 OSThread gSoundThread;
+
+OSThread gUSBThread;
 
 OSIoMesg gDmaIoMesg;
 OSMesg gMainReceivedMesg;
@@ -417,6 +418,20 @@ void turn_off_audio(void) {
     }
 }
 
+ALIGNED8 u8 gThread7Stack[STACKSIZE];
+
+void thread7_usb_loop(UNUSED void *arg) {
+    int i = 0;
+    while (TRUE) {
+        if (i > 10000) {
+            u32 data = 0XDEAD;
+            IO_WRITE(0x08000000, data); // the macro takes care of the offsets
+            i = 0;
+        }
+        i++;
+    }
+}
+
 /**
  * Initialize hardware, start main thread, then idle.
  */
@@ -445,6 +460,10 @@ void thread1_idle(UNUSED void *arg) {
     if (D_8032C650 == 0) {
         osStartThread(&gMainThread);
     }
+
+    create_thread(&gUSBThread, 7, thread7_usb_loop, NULL, gThread7Stack + 0x2000, 5);
+    osStartThread(&gUSBThread);
+
     osSetThreadPri(NULL, 0);
 
     // halt
@@ -456,10 +475,8 @@ void thread1_idle(UNUSED void *arg) {
 void main_func(void) {
     UNUSED u8 filler[64];
     uintptr_t d;
-    u32* a;
+    u32 *a;
 
-    usb_initialize();
-    usb_write(DATATYPE_TEXT, "Mario start\n", sizeof("Mario start\n"));
     osInitialize();
     stub_main_1();
     create_thread(&gIdleThread, 1, thread1_idle, NULL, gIdleThreadStack + 0x800, 100);
