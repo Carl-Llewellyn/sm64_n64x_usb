@@ -425,11 +425,11 @@ void turn_off_audio(void) {
 #define CART_DOM2_ADDR2_START 0x08000000
 #define CART_SRAM_START CART_DOM2_ADDR2_START
 
-ALIGNED8 u8 gThread7Stack[STACKSIZE];
+#define USB_X_ADDR CART_SRAM_START
+#define USB_Y_ADDR (USB_X_ADDR + 4)
+#define USB_Z_ADDR (USB_Y_ADDR + 4)
 
-// #define SEND_X_HEADER 0x11111111
-// #define SEND_Y_HEADER 0x22222222
-// #define SEND_Z_HEADER 0x33333333
+ALIGNED8 u8 gThread7Stack[STACKSIZE];
 
 f32 __osAtomicReadF32(f32 *src) {
     s32 prevInt = __osDisableInt();
@@ -444,20 +444,13 @@ void delay(u64 microseconds) {
         ;
 }
 
-/*
-void __osAtomicSetF32(f32* dest, f32 value) {
-    s32 prevInt = __osDisableInt();
-    *dest = value;
-    __osRestoreInt(prevInt);
-}
-
-    __osAtomicSetF32(&usb_x, intendedPos[0]);
-    __osAtomicSetF32(&usb_y, intendedPos[1]);
-    __osAtomicSetF32(&usb_z, intendedPos[2]);
-*/
+#define WAIT_ON_IO_BUSY(stat)                               \
+    stat = IO_READ(PI_STATUS_REG);                          \
+    while (stat & (PI_STATUS_IO_BUSY | PI_STATUS_DMA_BUSY)) \
+        stat = IO_READ(PI_STATUS_REG);
 
 void thread7_usb_loop(UNUSED void *arg) {
-     u32 posx_f32_binary_cast = 0;
+     u32 posX_f32_binary_cast = 0;
     u32 posY_f32_binary_cast = 0;
     u32 posZ_f32_binary_cast = 0;
 
@@ -472,14 +465,23 @@ void thread7_usb_loop(UNUSED void *arg) {
         if (gMarioObject != NULL) { 
             //this is casting the f32 binary values into the int by telling the compiler it's actually a float
             //this means we can pass the f32 as a u32 and convert it back at the other end 
-            *(f32 *) &posx_f32_binary_cast = __osAtomicReadF32(&gMarioObject->oPosX);
+            *(f32 *) &posX_f32_binary_cast = __osAtomicReadF32(&gMarioObject->oPosX);
             *(f32 *) &posY_f32_binary_cast = __osAtomicReadF32(&gMarioObject->oPosY);
             *(f32 *) &posZ_f32_binary_cast = __osAtomicReadF32(&gMarioObject->oPosZ);
 
             __osPiGetAccess();
-            IO_WRITE(CART_SRAM_START, posx_f32_binary_cast); // the macro takes care of the offsets
-            IO_WRITE(CART_SRAM_START, posY_f32_binary_cast); 
-            IO_WRITE(CART_SRAM_START, posZ_f32_binary_cast);
+            WAIT_ON_IO_BUSY(IO_READ(PI_STATUS_REG));
+            IO_WRITE(USB_Y_ADDR, posY_f32_binary_cast); 
+            __osPiRelAccess();
+            
+            __osPiGetAccess();
+            WAIT_ON_IO_BUSY(IO_READ(PI_STATUS_REG));
+            IO_WRITE(USB_X_ADDR, posX_f32_binary_cast); // the macro takes care of the offsets
+            __osPiRelAccess();
+
+            __osPiGetAccess();
+            WAIT_ON_IO_BUSY(IO_READ(PI_STATUS_REG));
+            IO_WRITE(USB_Z_ADDR, posZ_f32_binary_cast);
             __osPiRelAccess();
 
             osSetTimer(&timer, OS_USEC_TO_CYCLES(5000), 0, mq, NULL);
