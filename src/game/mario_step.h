@@ -14,6 +14,11 @@ struct BullyCollisionData {
   /*0x14*/ f32 velZ;
 };
 
+
+extern f32 usb_x;
+extern f32 usb_y;
+extern f32 usb_z;
+
 extern struct Surface gWaterSurfacePseudoFloor;
 
 f32 get_additive_y_vel_for_jumps(void);

@@ -13,6 +13,10 @@
 
 static s16 sMovingSandSpeeds[] = { 12, 8, 4, 0 };
 
+f32 usb_x = 0;
+f32 usb_y = 0;
+f32 usb_z = 0;
+
 struct Surface gWaterSurfacePseudoFloor = {
     SURFACE_VERY_SLIPPERY, 0,    0,    0, 0, 0, { 0, 0, 0 }, { 0, 0, 0 }, { 0, 0, 0 },
     { 0.0f, 1.0f, 0.0f },  0.0f, NULL,
@@ -321,6 +325,8 @@ static s32 perform_ground_quarter_step(struct MarioState *m, Vec3f nextPos) {
 
     return GROUND_STEP_NONE;
 }
+
+
 
 s32 perform_ground_step(struct MarioState *m) {
     s32 i;

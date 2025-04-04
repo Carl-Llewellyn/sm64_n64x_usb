@@ -222,17 +222,7 @@ static u32 usb_timeout_start(void) {
 ==============================*/
 
 static char usb_timeout_check(u32 start_ticks, u32 duration) {
-#ifndef LIBDRAGON
-    u64 current_ticks = (u64) osGetCount();
-    u64 timeout_ticks = OS_USEC_TO_CYCLES((u64) duration * 1000);
-#else
-    u64 current_ticks = (u64) TICKS_READ();
-    u64 timeout_ticks = (u64) TICKS_FROM_MS(duration);
-#endif
-    if (current_ticks < start_ticks)
-        current_ticks += 0x100000000ULL;
-    if (current_ticks >= (start_ticks + timeout_ticks))
-        return TRUE;
+
     return FALSE;
 }
 
@@ -353,8 +343,7 @@ u32 usb_getaddr() {
     @param A buffer with the data to send
     @param The size of the data being sent
 ==============================*/
-
-void usb_write(int datatype, const void *data, int size) {
+char usb_write(int datatype, const void *data, int size) {
     // If no debug cart exists, stop
    // if (usb_cart == CART_NONE)
      //   return;
