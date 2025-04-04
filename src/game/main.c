@@ -427,9 +427,9 @@ void turn_off_audio(void) {
 
 ALIGNED8 u8 gThread7Stack[STACKSIZE];
 
-//#define SEND_X_HEADER 0x11111111
-//#define SEND_Y_HEADER 0x22222222
-//#define SEND_Z_HEADER 0x33333333
+// #define SEND_X_HEADER 0x11111111
+// #define SEND_Y_HEADER 0x22222222
+// #define SEND_Z_HEADER 0x33333333
 
 f32 __osAtomicReadF32(f32 *src) {
     s32 prevInt = __osDisableInt();
@@ -457,14 +457,9 @@ void __osAtomicSetF32(f32* dest, f32 value) {
 */
 
 void thread7_usb_loop(UNUSED void *arg) {
-    //   int lastSent = 0;
-    // f32 x, y, z;
-    // f32 usb_x_value = 0;
-    //  f32 usb_y_value = 0;
-    // f32 usb_z_value = 0;
-    // char usb_x_str[32];
-    //  char usb_y_str[32];
-    //  char usb_z_str[32];
+     u32 posx_f32_binary_cast = 0;
+    u32 posY_f32_binary_cast = 0;
+    u32 posZ_f32_binary_cast = 0;
 
     OSTimer timer;
     OSMesgQueue timerQueue;
@@ -474,63 +469,21 @@ void thread7_usb_loop(UNUSED void *arg) {
     osCreateMesgQueue(&timerQueue, &timerMsg, 1);
 
     while (TRUE) {
-        if (gMarioObject != NULL) { //__osAtomicReadF32(&usb_x) != 0) {
-                                    //  usb_x_value = __osAtomicReadF32(&usb_x);
-                                    //  usb_y_value = __osAtomicReadF32(&usb_y);
-                                    //  usb_z_value = __osAtomicReadF32(&usb_z);
+        if (gMarioObject != NULL) { 
+            //this is casting the f32 binary values into the int by telling the compiler it's actually a float
+            //this means we can pass the f32 as a u32 and convert it back at the other end 
+            *(f32 *) &posx_f32_binary_cast = __osAtomicReadF32(&gMarioObject->oPosX);
+            *(f32 *) &posY_f32_binary_cast = __osAtomicReadF32(&gMarioObject->oPosY);
+            *(f32 *) &posZ_f32_binary_cast = __osAtomicReadF32(&gMarioObject->oPosZ);
 
             __osPiGetAccess();
-            IO_WRITE(CART_SRAM_START,
-                     __osAtomicReadF32(&gMarioObject->oPosX)); // the macro takes care of the
-                                                               //  offsets
-            IO_WRITE(CART_SRAM_START,
-                     __osAtomicReadF32(&gMarioObject->oPosY)); // the macro takes care of the
-                                                               //  offsets
-            IO_WRITE(CART_SRAM_START,
-                     __osAtomicReadF32(&gMarioObject->oPosZ)); // the macro takes care of the
-                                                               //   offsets
+            IO_WRITE(CART_SRAM_START, posx_f32_binary_cast); // the macro takes care of the offsets
+            IO_WRITE(CART_SRAM_START, posY_f32_binary_cast); 
+            IO_WRITE(CART_SRAM_START, posZ_f32_binary_cast);
             __osPiRelAccess();
 
-            //    sprintf(usb_x_str, "%f\n", usb_x_value);
-            //   sprintf(usb_y_str, "%f\n", usb_y_value);
-            //   sprintf(usb_z_str, "%f\n", usb_z_value);
-
-            //   usb_write(DATATYPE_TEXT, usb_x_str, strlen(usb_x_str));
-            //    usb_write(DATATYPE_TEXT, usb_y_str, strlen(usb_y_str));
-            //   usb_write(DATATYPE_TEXT, usb_z_str, strlen(usb_z_str));
-
-            /*
-                        switch(lastSent){
-                            case 0:
-                            __osPiGetAccess();
-                            IO_WRITE(CART_SRAM_START, SEND_X_HEADER);
-                          IO_WRITE(CART_SRAM_START, __osAtomicReadF32(&usb_x)); // the macro takes care
-               of the
-                            __osPiRelAccess();
-                            break;
-                            case 1:
-                            __osPiGetAccess();
-                            IO_WRITE(CART_SRAM_START, SEND_Y_HEADER);
-                         IO_WRITE(CART_SRAM_START, __osAtomicReadF32(&usb_y)); // the macro takes care
-               of the
-                            __osPiRelAccess();
-                            break;
-                            case 2:
-                            __osPiGetAccess();
-                            IO_WRITE(CART_SRAM_START, SEND_Z_HEADER);
-                           IO_WRITE(CART_SRAM_START, __osAtomicReadF32(&usb_z)); // the macro takes care
-               of the
-                            __osPiRelAccess();
-                            break;
-                        }
-            */
             osSetTimer(&timer, OS_USEC_TO_CYCLES(5000), 0, mq, NULL);
             osRecvMesg(mq, &timerMsg, OS_MESG_BLOCK);
-
-            //   lastSent++;
-            //    if (lastSent == 3){
-            //        lastSent = 0;
-            //   }
         }
     }
 }
