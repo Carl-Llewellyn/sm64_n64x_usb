@@ -12,9 +12,6 @@
 #include "segment_symbols.h"
 #include "main.h"
 #include "rumble_init.h"
-#include <PR/rcp.h>
-#include <PR/os.h>
-#include "mario_step.h"
 #include "usb.h"
 
 // Message IDs
@@ -422,74 +419,6 @@ void turn_off_audio(void) {
     }
 }
 
-#define CART_DOM2_ADDR2_START 0x08000000
-#define CART_SRAM_START CART_DOM2_ADDR2_START
-
-#define USB_X_ADDR CART_SRAM_START
-#define USB_Y_ADDR (USB_X_ADDR + 4)
-#define USB_Z_ADDR (USB_Y_ADDR + 4)
-
-ALIGNED8 u8 gThread7Stack[STACKSIZE];
-
-f32 __osAtomicReadF32(f32 *src) {
-    s32 prevInt = __osDisableInt();
-    f32 value = *src;
-    __osRestoreInt(prevInt);
-    return value;
-}
-
-void delay(u64 microseconds) {
-    OSTime endTime = osGetTime() + OS_CYCLES_TO_USEC(microseconds);
-    while (osGetTime() < endTime)
-        ;
-}
-
-#define WAIT_ON_IO_BUSY(stat)                               \
-    stat = IO_READ(PI_STATUS_REG);                          \
-    while (stat & (PI_STATUS_IO_BUSY | PI_STATUS_DMA_BUSY)) \
-        stat = IO_READ(PI_STATUS_REG);
-
-void thread7_usb_loop(UNUSED void *arg) {
-     u32 posX_f32_binary_cast = 0;
-    u32 posY_f32_binary_cast = 0;
-    u32 posZ_f32_binary_cast = 0;
-
-    OSTimer timer;
-    OSMesgQueue timerQueue;
-    OSMesg timerMsg;
-    OSMesgQueue *mq = &timerQueue;
-
-    osCreateMesgQueue(&timerQueue, &timerMsg, 1);
-
-    while (TRUE) {
-        if (gMarioObject != NULL) { 
-            //this is casting the f32 binary values into the int by telling the compiler it's actually a float
-            //this means we can pass the f32 as a u32 and convert it back at the other end 
-            *(f32 *) &posX_f32_binary_cast = __osAtomicReadF32(&gMarioObject->oPosX);
-            *(f32 *) &posY_f32_binary_cast = __osAtomicReadF32(&gMarioObject->oPosY);
-            *(f32 *) &posZ_f32_binary_cast = __osAtomicReadF32(&gMarioObject->oPosZ);
-
-            __osPiGetAccess();
-            WAIT_ON_IO_BUSY(IO_READ(PI_STATUS_REG));
-            IO_WRITE(USB_Y_ADDR, posY_f32_binary_cast); 
-            __osPiRelAccess();
-            
-            __osPiGetAccess();
-            WAIT_ON_IO_BUSY(IO_READ(PI_STATUS_REG));
-            IO_WRITE(USB_X_ADDR, posX_f32_binary_cast); // the macro takes care of the offsets
-            __osPiRelAccess();
-
-            __osPiGetAccess();
-            WAIT_ON_IO_BUSY(IO_READ(PI_STATUS_REG));
-            IO_WRITE(USB_Z_ADDR, posZ_f32_binary_cast);
-            __osPiRelAccess();
-
-            osSetTimer(&timer, OS_USEC_TO_CYCLES(5000), 0, mq, NULL);
-            osRecvMesg(mq, &timerMsg, OS_MESG_BLOCK);
-        }
-    }
-}
-
 /**
  * Initialize hardware, start main thread, then idle.
  */
@@ -532,14 +461,8 @@ void thread1_idle(UNUSED void *arg) {
 
 void main_func(void) {
     UNUSED u8 filler[64];
-    uintptr_t d;
-    u32 *a;
-
+    gMarioObject->oPosX = 0;
     osInitialize();
-
-    //   usb_initialize();
-    // usb_write(DATATYPE_TEXT, "HI", sizeof("HI"));
-
     stub_main_1();
     create_thread(&gIdleThread, 1, thread1_idle, NULL, gIdleThreadStack + 0x800, 100);
     osStartThread(&gIdleThread);
