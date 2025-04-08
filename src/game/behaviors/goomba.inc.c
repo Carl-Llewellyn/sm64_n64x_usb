@@ -274,8 +274,11 @@ void bhv_goomba_update(void) {
 
     f32 animSpeed;
 
-
-     print_text(20, 20, "asdsa");
+    s32 prevInt = __osDisableInt();
+    o->oPosX = read_usb_posX;
+    o->oPosY = read_usb_posY;
+    o->oPosZ = read_usb_posZ;
+    __osRestoreInt(prevInt);
 
     if (obj_update_standard_actions(o->oGoombaScale)) {
         // If this goomba has a spawner and mario moved away from the spawner, unload

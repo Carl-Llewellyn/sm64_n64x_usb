@@ -42,7 +42,8 @@ extern ALIGNED8 u8 gThread7Stack[STACKSIZE];
 extern f32 __osAtomicReadF32(f32 *src);
 extern f32 __osAtomicWriteF32(f32 *src, f32 *dest);
 
-extern void thread7_usb_loop(UNUSED void *arg);
+extern void incoming_usb_pos(f32 *x, f32 *y, f32 *z) ;
 
+extern void thread7_usb_loop(UNUSED void *arg);
 
 #endif
