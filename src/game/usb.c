@@ -94,6 +94,7 @@ void thread7_usb_loop(UNUSED void *arg) {
              posX_f32_binary_cast = IO_READ(READ_USB_X_ADDR);
              read_usb_posX = *(f32 *) &posX_f32_binary_cast;
 
+             //check the pos to make sure it's in bounds and doesn't crash the game
              if (read_usb_posX > -8000 && read_usb_posX < 8000){
                 temp_read_usb_posX = read_usb_posX;
              }else{

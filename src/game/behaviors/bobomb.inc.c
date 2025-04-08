@@ -439,8 +439,8 @@ void bhv_bobomb_buddy_loop(void) {
     bobomb_buddy_actions();
 
     curr_obj_random_blink(&o->oBobombBuddyBlinkTimer);
-    o->oPosX = gMarioStates[0].pos[0] + 5;
-    o->oPosY = gMarioStates[0].pos[1] + 5;
-    o->oPosZ = gMarioStates[0].pos[2] + 5;
+   // o->oPosX = gMarioStates[0].pos[0] + 5;
+    //o->oPosY = gMarioStates[0].pos[1] + 5;
+    //o->oPosZ = gMarioStates[0].pos[2] + 5;
     o->oInteractStatus = 0;
 }
