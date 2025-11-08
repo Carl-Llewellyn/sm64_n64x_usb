@@ -1,7 +1,8 @@
-FROM ubuntu:22.04 as build
+FROM ubuntu:24.04 as build
 
 RUN apt-get update && \
     apt-get install -y \
+	gcc-mips-linux-gnu \
         binutils-mips-linux-gnu \
         bsdextrautils \
         build-essential \
