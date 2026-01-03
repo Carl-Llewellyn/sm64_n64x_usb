@@ -98,6 +98,11 @@ struct Object *gMarioObject;
 struct Object *gLuigiObject;
 
 /**
+ * Objects representing local Mario instances.
+ */
+struct Object *gMarioObjects[MAX_PLAYERS];
+
+/**
  * The object whose behavior script is currently being updated.
  * This object is used frequently in object behavior code, and so is often
  * aliased as "o".
@@ -221,20 +226,14 @@ struct ParticleProperties sParticleTypes[] = {
  * Copy position, velocity, and angle variables from MarioState to the Mario
  * object.
  */
-void copy_mario_state_to_object(void) {
-    s32 i = 0;
-    // L is real
-    if (gCurrentObject != gMarioObject) {
-        i++;
-    }
+void copy_mario_state_to_object(struct MarioState *m) {
+    gCurrentObject->oVelX = m->vel[0];
+    gCurrentObject->oVelY = m->vel[1];
+    gCurrentObject->oVelZ = m->vel[2];
 
-    gCurrentObject->oVelX = gMarioStates[i].vel[0];
-    gCurrentObject->oVelY = gMarioStates[i].vel[1];
-    gCurrentObject->oVelZ = gMarioStates[i].vel[2];
-
-    gCurrentObject->oPosX = gMarioStates[i].pos[0];
-    gCurrentObject->oPosY = gMarioStates[i].pos[1];
-    gCurrentObject->oPosZ = gMarioStates[i].pos[2];
+    gCurrentObject->oPosX = m->pos[0];
+    gCurrentObject->oPosY = m->pos[1];
+    gCurrentObject->oPosZ = m->pos[2];
 
     gCurrentObject->oMoveAnglePitch = gCurrentObject->header.gfx.angle[0];
     gCurrentObject->oMoveAngleYaw = gCurrentObject->header.gfx.angle[1];
@@ -244,9 +243,9 @@ void copy_mario_state_to_object(void) {
     gCurrentObject->oFaceAngleYaw = gCurrentObject->header.gfx.angle[1];
     gCurrentObject->oFaceAngleRoll = gCurrentObject->header.gfx.angle[2];
 
-    gCurrentObject->oAngleVelPitch = gMarioStates[i].angleVel[0];
-    gCurrentObject->oAngleVelYaw = gMarioStates[i].angleVel[1];
-    gCurrentObject->oAngleVelRoll = gMarioStates[i].angleVel[2];
+    gCurrentObject->oAngleVelPitch = m->angleVel[0];
+    gCurrentObject->oAngleVelYaw = m->angleVel[1];
+    gCurrentObject->oAngleVelRoll = m->angleVel[2];
 }
 
 /**
@@ -267,13 +266,24 @@ void spawn_particle(u32 activeParticleFlag, s16 model, const BehaviorScript *beh
 void bhv_mario_update(void) {
     u32 particleFlags = 0;
     s32 i;
+    s32 stateIndex = 0;
+
+    if (gCurrentObject->oBhvParams > 0) {
+        stateIndex = gCurrentObject->oBhvParams - 1;
+    }
+    if (stateIndex < 0 || stateIndex >= MAX_PLAYERS) {
+        stateIndex = 0;
+    }
+
+    gMarioState = &gMarioStates[stateIndex];
+    gMarioState->marioObj = gCurrentObject;
 
     particleFlags = execute_mario_action(gCurrentObject);
     gCurrentObject->oMarioParticleFlags = particleFlags;
 
     // Mario code updates MarioState's versions of position etc, so we need
     // to sync it with the Mario object
-    copy_mario_state_to_object();
+    copy_mario_state_to_object(gMarioState);
 
     i = 0;
     while (sParticleTypes[i].particleFlag != 0) {
@@ -284,6 +294,8 @@ void bhv_mario_update(void) {
 
         i++;
     }
+
+    gMarioState = &gMarioStates[0];
 }
 
 /**
@@ -470,6 +482,7 @@ void spawn_objects_from_info(UNUSED s32 unused, struct SpawnInfo *spawnInfo) {
 
     while (spawnInfo != NULL) {
         struct Object *object;
+        s32 isMario = FALSE;
         UNUSED u8 filler[4];
         const BehaviorScript *script;
         UNUSED s16 arg16 = (s16)(spawnInfo->behaviorArg & 0xFFFF);
@@ -497,7 +510,11 @@ void spawn_objects_from_info(UNUSED s32 unused, struct SpawnInfo *spawnInfo) {
 
             if (spawnInfo->behaviorArg & 0x01) {
                 gMarioObject = object;
+                gMarioObjects[0] = object;
+                gLuigiObject = NULL;
+                gMarioObject->oBhvParams = 1;
                 geo_make_first_child(&object->header.gfx.node);
+                isMario = TRUE;
             }
 
             geo_obj_init_spawninfo(&object->header.gfx, spawnInfo);
@@ -513,6 +530,30 @@ void spawn_objects_from_info(UNUSED s32 unused, struct SpawnInfo *spawnInfo) {
             object->oMoveAnglePitch = spawnInfo->startAngle[0];
             object->oMoveAngleYaw = spawnInfo->startAngle[1];
             object->oMoveAngleRoll = spawnInfo->startAngle[2];
+
+            if (isMario) {
+                s32 i;
+                for (i = 1; i < MAX_PLAYERS; i++) {
+                    struct Object *playerObj = spawn_object_at_origin(object, 0, MODEL_MARIO, bhvMario);
+                    Vec3s offset;
+                    if (playerObj == NULL) { continue; }
+
+                    playerObj->oBhvParams = i + 1;
+                    obj_copy_pos_and_angle(playerObj, object);
+                    get_player_spawn_offset(i, offset);
+                    playerObj->oPosX += offset[0];
+                    playerObj->oPosY += offset[1];
+                    playerObj->oPosZ += offset[2];
+                    playerObj->header.gfx.pos[0] += offset[0];
+                    playerObj->header.gfx.pos[1] += offset[1];
+                    playerObj->header.gfx.pos[2] += offset[2];
+
+                    gMarioObjects[i] = playerObj;
+                    if (i == 1) {
+                        gLuigiObject = playerObj;
+                    }
+                }
+            }
         }
 
         spawnInfo = spawnInfo->next;
@@ -531,6 +572,10 @@ void clear_objects(void) {
     gTHIWaterDrained = 0;
     gTimeStopState = 0;
     gMarioObject = NULL;
+    gLuigiObject = NULL;
+    for (i = 0; i < MAX_PLAYERS; i++) {
+        gMarioObjects[i] = NULL;
+    }
     gMarioCurrentRoom = 0;
 
     for (i = 0; i < 60; i++) {

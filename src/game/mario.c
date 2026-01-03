@@ -726,6 +726,10 @@ void update_mario_sound_and_camera(struct MarioState *m) {
     u32 action = m->action;
     s32 camPreset = m->area->camera->mode;
 
+    if (m != &gMarioStates[0]) {
+        return;
+    }
+
     if (action == ACT_FIRST_PERSON) {
         raise_background_noise(2);
         gCameraMovementFlags &= ~CAM_MOVE_C_UP_MODE;
@@ -1796,78 +1800,81 @@ s32 execute_mario_action(UNUSED struct Object *o) {
  *                  INITIALIZATION                *
  **************************************************/
 
-void init_mario(void) {
+static void init_single_mario(struct MarioState *m, struct SpawnInfo *spawnInfo, s32 playerIndex) {
     Vec3s capPos;
     struct Object *capObject;
 
-    unused80339F10 = 0;
+    m->spawnInfo = spawnInfo;
+    m->statusForCamera = &gPlayerCameraState[playerIndex];
+    m->marioBodyState = &gBodyStates[playerIndex];
+    m->controller = &gControllers[playerIndex];
+    m->animList = &gMarioAnimsBuf;
 
-    gMarioState->actionTimer = 0;
-    gMarioState->framesSinceA = 0xFF;
-    gMarioState->framesSinceB = 0xFF;
+    m->actionTimer = 0;
+    m->framesSinceA = 0xFF;
+    m->framesSinceB = 0xFF;
 
-    gMarioState->invincTimer = 0;
+    m->invincTimer = 0;
 
     if (save_file_get_flags()
         & (SAVE_FLAG_CAP_ON_GROUND | SAVE_FLAG_CAP_ON_KLEPTO | SAVE_FLAG_CAP_ON_UKIKI
            | SAVE_FLAG_CAP_ON_MR_BLIZZARD)) {
-        gMarioState->flags = 0;
+        m->flags = 0;
     } else {
-        gMarioState->flags = (MARIO_NORMAL_CAP | MARIO_CAP_ON_HEAD);
+        m->flags = (MARIO_NORMAL_CAP | MARIO_CAP_ON_HEAD);
     }
 
-    gMarioState->forwardVel = 0.0f;
-    gMarioState->squishTimer = 0;
+    m->forwardVel = 0.0f;
+    m->squishTimer = 0;
 
-    gMarioState->hurtCounter = 0;
-    gMarioState->healCounter = 0;
+    m->hurtCounter = 0;
+    m->healCounter = 0;
 
-    gMarioState->capTimer = 0;
-    gMarioState->quicksandDepth = 0.0f;
+    m->capTimer = 0;
+    m->quicksandDepth = 0.0f;
 
-    gMarioState->heldObj = NULL;
-    gMarioState->riddenObj = NULL;
-    gMarioState->usedObj = NULL;
+    m->heldObj = NULL;
+    m->riddenObj = NULL;
+    m->usedObj = NULL;
 
-    gMarioState->waterLevel =
-        find_water_level(gMarioSpawnInfo->startPos[0], gMarioSpawnInfo->startPos[2]);
+    m->waterLevel = find_water_level(spawnInfo->startPos[0], spawnInfo->startPos[2]);
 
-    gMarioState->area = gCurrentArea;
-    gMarioState->marioObj = gMarioObject;
-    gMarioState->marioObj->header.gfx.animInfo.animID = -1;
-    vec3s_copy(gMarioState->faceAngle, gMarioSpawnInfo->startAngle);
-    vec3s_set(gMarioState->angleVel, 0, 0, 0);
-    vec3s_to_vec3f(gMarioState->pos, gMarioSpawnInfo->startPos);
-    vec3f_set(gMarioState->vel, 0, 0, 0);
-    gMarioState->floorHeight =
-        find_floor(gMarioState->pos[0], gMarioState->pos[1], gMarioState->pos[2], &gMarioState->floor);
+    m->area = gCurrentArea;
+    m->marioObj = gMarioObjects[playerIndex];
+    if (m->marioObj == NULL) { return; }
 
-    if (gMarioState->pos[1] < gMarioState->floorHeight) {
-        gMarioState->pos[1] = gMarioState->floorHeight;
+    m->marioObj->header.gfx.animInfo.animID = -1;
+    vec3s_copy(m->faceAngle, spawnInfo->startAngle);
+    vec3s_set(m->angleVel, 0, 0, 0);
+    vec3s_to_vec3f(m->pos, spawnInfo->startPos);
+    vec3f_set(m->vel, 0, 0, 0);
+    m->floorHeight = find_floor(m->pos[0], m->pos[1], m->pos[2], &m->floor);
+
+    if (m->pos[1] < m->floorHeight) {
+        m->pos[1] = m->floorHeight;
     }
 
-    gMarioState->marioObj->header.gfx.pos[1] = gMarioState->pos[1];
+    m->marioObj->header.gfx.pos[1] = m->pos[1];
 
-    gMarioState->action =
-        (gMarioState->pos[1] <= (gMarioState->waterLevel - 100)) ? ACT_WATER_IDLE : ACT_IDLE;
+    m->action = (m->pos[1] <= (m->waterLevel - 100)) ? ACT_WATER_IDLE : ACT_IDLE;
 
-    mario_reset_bodystate(gMarioState);
-    update_mario_info_for_cam(gMarioState);
-    gMarioState->marioBodyState->punchState = 0;
+    mario_reset_bodystate(m);
+    update_mario_info_for_cam(m);
+    m->marioBodyState->punchState = 0;
 
-    gMarioState->marioObj->oPosX = gMarioState->pos[0];
-    gMarioState->marioObj->oPosY = gMarioState->pos[1];
-    gMarioState->marioObj->oPosZ = gMarioState->pos[2];
+    m->marioObj->oPosX = m->pos[0];
+    m->marioObj->oPosY = m->pos[1];
+    m->marioObj->oPosZ = m->pos[2];
 
-    gMarioState->marioObj->oMoveAnglePitch = gMarioState->faceAngle[0];
-    gMarioState->marioObj->oMoveAngleYaw = gMarioState->faceAngle[1];
-    gMarioState->marioObj->oMoveAngleRoll = gMarioState->faceAngle[2];
+    m->marioObj->oMoveAnglePitch = m->faceAngle[0];
+    m->marioObj->oMoveAngleYaw = m->faceAngle[1];
+    m->marioObj->oMoveAngleRoll = m->faceAngle[2];
 
-    vec3f_copy(gMarioState->marioObj->header.gfx.pos, gMarioState->pos);
-    vec3s_set(gMarioState->marioObj->header.gfx.angle, 0, gMarioState->faceAngle[1], 0);
+    vec3f_copy(m->marioObj->header.gfx.pos, m->pos);
+    vec3s_set(m->marioObj->header.gfx.angle, 0, m->faceAngle[1], 0);
 
-    if (save_file_get_cap_pos(capPos)) {
-        capObject = spawn_object(gMarioState->marioObj, MODEL_MARIOS_CAP, bhvNormalCap);
+    if (playerIndex == 0 && save_file_get_cap_pos(capPos)) {
+        capObject = spawn_object(m->marioObj, MODEL_MARIOS_CAP, bhvNormalCap);
 
         capObject->oPosX = capPos[0];
         capObject->oPosY = capPos[1];
@@ -1879,27 +1886,42 @@ void init_mario(void) {
     }
 }
 
+void init_mario(void) {
+    s32 i;
+
+    unused80339F10 = 0;
+    for (i = 0; i < MAX_PLAYERS; i++) {
+        init_single_mario(&gMarioStates[i], &gPlayerSpawnInfos[i], i);
+    }
+    gMarioState = &gMarioStates[0];
+}
+
 void init_mario_from_save_file(void) {
-    gMarioState->unk00 = 0;
-    gMarioState->flags = 0;
-    gMarioState->action = 0;
-    gMarioState->spawnInfo = &gPlayerSpawnInfos[0];
-    gMarioState->statusForCamera = &gPlayerCameraState[0];
-    gMarioState->marioBodyState = &gBodyStates[0];
-    gMarioState->controller = &gControllers[0];
-    gMarioState->animList = &gMarioAnimsBuf;
+    s32 i;
+    for (i = 0; i < MAX_PLAYERS; i++) {
+        struct MarioState *m = &gMarioStates[i];
+        m->unk00 = 0;
+        m->flags = 0;
+        m->action = 0;
+        m->spawnInfo = &gPlayerSpawnInfos[i];
+        m->statusForCamera = &gPlayerCameraState[i];
+        m->marioBodyState = &gBodyStates[i];
+        m->controller = &gControllers[i];
+        m->animList = &gMarioAnimsBuf;
 
-    gMarioState->numCoins = 0;
-    gMarioState->numStars =
-        save_file_get_total_star_count(gCurrSaveFileNum - 1, COURSE_MIN - 1, COURSE_MAX - 1);
-    gMarioState->numKeys = 0;
+        m->numCoins = 0;
+        m->numStars =
+            save_file_get_total_star_count(gCurrSaveFileNum - 1, COURSE_MIN - 1, COURSE_MAX - 1);
+        m->numKeys = 0;
 
-    gMarioState->numLives = 4;
-    gMarioState->health = 0x880;
+        m->numLives = 4;
+        m->health = 0x880;
 
-    gMarioState->prevNumStarsForDialog = gMarioState->numStars;
-    gMarioState->unkB0 = 0xBD;
+        m->prevNumStarsForDialog = m->numStars;
+        m->unkB0 = 0xBD;
+    }
 
+    gMarioState = &gMarioStates[0];
     gHudDisplay.coins = 0;
     gHudDisplay.wedges = 8;
 }

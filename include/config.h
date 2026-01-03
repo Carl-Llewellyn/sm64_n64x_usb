@@ -38,6 +38,9 @@
 #define SCREEN_WIDTH 320
 #define SCREEN_HEIGHT 240
 
+// Player count for local Mario instances.
+#define MAX_PLAYERS 3
+
 // Stack Size Defines
 #define IDLE_STACKSIZE 0x800
 #define STACKSIZE 0x2000

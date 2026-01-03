@@ -3,6 +3,7 @@
 
 #include <PR/ultratypes.h>
 
+#include "config.h"
 #include "types.h"
 
 
@@ -134,6 +135,8 @@ extern struct CreditsEntry *gCurrCreditsEntry;
 
 extern struct MarioState gMarioStates[];
 extern struct MarioState *gMarioState;
+
+void get_player_spawn_offset(s32 playerIndex, Vec3s out);
 
 extern s16 sCurrPlayMode;
 extern u16 D_80339ECA;

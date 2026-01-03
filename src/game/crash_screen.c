@@ -3,10 +3,13 @@
 #include <string.h>
 
 #include "sm64.h"
+#include "object_list_processor.h"
 
-#if defined(TARGET_N64) && (defined(VERSION_EU) || defined(VERSION_SH) || defined(VERSION_CN))
+#if defined(TARGET_N64)
 
 #include "lib/src/printf.h"
+
+extern uintptr_t sSegmentTable[32];
 
 u8 gCrashScreenCharToGlyph[128] = {
     -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1,
@@ -17,10 +20,79 @@ u8 gCrashScreenCharToGlyph[128] = {
     23, 24, 25, 26, 27, 28, 29, 30, 31, 32, 33, 34, 35, -1, -1, -1, -1, -1,
 };
 
+#if defined(VERSION_EU) || defined(VERSION_SH) || defined(VERSION_CN)
+#define CRASH_SCREEN_USE_FONT 1
+#endif
+
+#define CRASH_DUMP_STACK_WORDS 64
+#define CRASH_DUMP_MAGIC 0x43524153u
+
+struct CrashDump {
+    u32 magic;
+    u32 threadId;
+    u32 pc;
+    u32 sp;
+    u32 ra;
+    u32 sr;
+    u32 cause;
+    u32 badvaddr;
+    u32 at;
+    u32 v0;
+    u32 v1;
+    u32 a0;
+    u32 a1;
+    u32 a2;
+    u32 a3;
+    u32 t0;
+    u32 t1;
+    u32 t2;
+    u32 t3;
+    u32 t4;
+    u32 t5;
+    u32 t6;
+    u32 t7;
+    u32 s0;
+    u32 s1;
+    u32 s2;
+    u32 s3;
+    u32 s4;
+    u32 s5;
+    u32 s6;
+    u32 s7;
+    u32 t8;
+    u32 t9;
+    u32 gp;
+    u32 s8;
+    u32 lo;
+    u32 hi;
+    u32 fpcsr;
+    u32 currentObject;
+    u32 currentBehavior;
+    u32 currentPosX;
+    u32 currentPosY;
+    u32 currentPosZ;
+    u32 currentWallHitboxRadius;
+    u32 currentObjectIndex;
+    u32 currentBhvParams;
+    u32 currentAction;
+    u32 currentActiveFlags;
+    u32 currentPrevObject;
+    u32 currentNextObject;
+    u32 seg13Base;
+    u32 currentBehaviorSegmented;
+    u32 stackAddr;
+    u32 stackWords;
+    u32 stack[CRASH_DUMP_STACK_WORDS];
+};
+
+volatile struct CrashDump gCrashDump;
+
 // A height of seven pixels for each Character * nine rows of characters + one row unused.
+#ifdef CRASH_SCREEN_USE_FONT
 u32 gCrashScreenFont[7 * 9 + 1] = {
     #include "textures/crash_screen/crash_screen_font.ia1.inc.c"
 };
+#endif
 
 
 char *gCauseDesc[18] = {
@@ -52,6 +124,8 @@ char *gFpcsrDesc[6] = {
 
 
 extern u64 osClockRate;
+extern OSThread *__osFaultedThread;
+extern OSThread *__osActiveQueue;
 
 struct {
     OSThread thread;
@@ -79,6 +153,12 @@ void crash_screen_draw_rect(s32 x, s32 y, s32 w, s32 h) {
 }
 
 void crash_screen_draw_glyph(s32 x, s32 y, s32 glyph) {
+#ifndef CRASH_SCREEN_USE_FONT
+    (void)x;
+    (void)y;
+    (void)glyph;
+    return;
+#else
     const u32 *data;
     u16 *ptr;
     u32 bit;
@@ -98,6 +178,7 @@ void crash_screen_draw_glyph(s32 x, s32 y, s32 glyph) {
         }
         ptr += gCrashScreen.width - 6;
     }
+#endif
 }
 
 static char *write_to_buf(char *buffer, const char *data, size_t size) {
@@ -105,6 +186,12 @@ static char *write_to_buf(char *buffer, const char *data, size_t size) {
 }
 
 void crash_screen_print(s32 x, s32 y, const char *fmt, ...) {
+#ifndef CRASH_SCREEN_USE_FONT
+    (void)x;
+    (void)y;
+    (void)fmt;
+    return;
+#else
     char *ptr;
     u32 glyph;
     s32 size;
@@ -140,6 +227,7 @@ void crash_screen_print(s32 x, s32 y, const char *fmt, ...) {
     }
 
     va_end(args);
+#endif
 }
 
 void crash_screen_sleep(s32 ms) {
@@ -177,7 +265,120 @@ void crash_screen_print_fpcsr(u32 fpcsr) {
     }
 }
 
+static void crash_dump_capture(OSThread *thread) {
+    __OSThreadContext *tc = &thread->context;
+    u32 sp = (u32) tc->sp;
+    u32 i;
+    u32 maxWords;
+    struct Object *obj = gCurrentObject;
+    u32 seg13 = 0;
+    u32 seg13Base = 0;
+    u32 behaviorSeg = 0;
+    u32 objIndex = 0xFFFFFFFF;
+
+    gCrashDump.magic = CRASH_DUMP_MAGIC;
+    gCrashDump.threadId = thread->id;
+    gCrashDump.pc = tc->pc;
+    gCrashDump.sp = sp;
+    gCrashDump.ra = (u32) tc->ra;
+    gCrashDump.sr = tc->sr;
+    gCrashDump.cause = tc->cause;
+    gCrashDump.badvaddr = tc->badvaddr;
+    gCrashDump.at = (u32) tc->at;
+    gCrashDump.v0 = (u32) tc->v0;
+    gCrashDump.v1 = (u32) tc->v1;
+    gCrashDump.a0 = (u32) tc->a0;
+    gCrashDump.a1 = (u32) tc->a1;
+    gCrashDump.a2 = (u32) tc->a2;
+    gCrashDump.a3 = (u32) tc->a3;
+    gCrashDump.t0 = (u32) tc->t0;
+    gCrashDump.t1 = (u32) tc->t1;
+    gCrashDump.t2 = (u32) tc->t2;
+    gCrashDump.t3 = (u32) tc->t3;
+    gCrashDump.t4 = (u32) tc->t4;
+    gCrashDump.t5 = (u32) tc->t5;
+    gCrashDump.t6 = (u32) tc->t6;
+    gCrashDump.t7 = (u32) tc->t7;
+    gCrashDump.s0 = (u32) tc->s0;
+    gCrashDump.s1 = (u32) tc->s1;
+    gCrashDump.s2 = (u32) tc->s2;
+    gCrashDump.s3 = (u32) tc->s3;
+    gCrashDump.s4 = (u32) tc->s4;
+    gCrashDump.s5 = (u32) tc->s5;
+    gCrashDump.s6 = (u32) tc->s6;
+    gCrashDump.s7 = (u32) tc->s7;
+    gCrashDump.t8 = (u32) tc->t8;
+    gCrashDump.t9 = (u32) tc->t9;
+    gCrashDump.gp = (u32) tc->gp;
+    gCrashDump.s8 = (u32) tc->s8;
+    gCrashDump.lo = (u32) tc->lo;
+    gCrashDump.hi = (u32) tc->hi;
+    gCrashDump.fpcsr = tc->fpcsr;
+    gCrashDump.currentObject = (u32) obj;
+    gCrashDump.currentBehavior = 0;
+    gCrashDump.currentPosX = 0;
+    gCrashDump.currentPosY = 0;
+    gCrashDump.currentPosZ = 0;
+    gCrashDump.currentWallHitboxRadius = 0;
+    gCrashDump.currentObjectIndex = objIndex;
+    gCrashDump.currentBhvParams = 0;
+    gCrashDump.currentAction = 0;
+    gCrashDump.currentActiveFlags = 0;
+    gCrashDump.currentPrevObject = 0;
+    gCrashDump.currentNextObject = 0;
+    gCrashDump.seg13Base = 0;
+    gCrashDump.currentBehaviorSegmented = 0;
+
+    if (obj != NULL) {
+        gCrashDump.currentBehavior = (u32) obj->behavior;
+        gCrashDump.currentPosX = *(u32 *) &obj->oPosX;
+        gCrashDump.currentPosY = *(u32 *) &obj->oPosY;
+        gCrashDump.currentPosZ = *(u32 *) &obj->oPosZ;
+        gCrashDump.currentWallHitboxRadius = *(u32 *) &obj->oWallHitboxRadius;
+        if (obj >= gObjectPool && obj < gObjectPool + OBJECT_POOL_CAPACITY) {
+            objIndex = (u32) (obj - gObjectPool);
+            gCrashDump.currentObjectIndex = objIndex;
+        }
+        gCrashDump.currentBhvParams = (u32) obj->rawData.asS32[0x40];
+        gCrashDump.currentAction = (u32) obj->rawData.asS32[0x31];
+        gCrashDump.currentActiveFlags = (u32) obj->activeFlags;
+        gCrashDump.currentPrevObject = (u32) obj->header.prev;
+        gCrashDump.currentNextObject = (u32) obj->header.next;
+
+        seg13 = sSegmentTable[0x13];
+        gCrashDump.seg13Base = seg13;
+        seg13Base = seg13 | 0x80000000;
+        if (seg13 != 0 && gCrashDump.currentBehavior >= seg13Base) {
+            behaviorSeg = 0x13000000U | (gCrashDump.currentBehavior - seg13Base);
+            gCrashDump.currentBehaviorSegmented = behaviorSeg;
+        }
+    }
+
+    gCrashDump.stackAddr = sp;
+    gCrashDump.stackWords = 0;
+
+    if ((sp & 3) == 0 && sp >= 0x80000000 && sp < 0x80800000) {
+        maxWords = (0x80800000 - sp) / 4;
+        if (maxWords > CRASH_DUMP_STACK_WORDS) {
+            maxWords = CRASH_DUMP_STACK_WORDS;
+        }
+        gCrashDump.stackWords = maxWords;
+        for (i = 0; i < maxWords; i++) {
+            gCrashDump.stack[i] = *(u32 *) (sp + i * 4);
+        }
+    }
+
+    osWritebackDCacheAll();
+}
+
 void draw_crash_screen(OSThread *thread) {
+#ifndef CRASH_SCREEN_USE_FONT
+    crash_dump_capture(thread);
+    crash_screen_draw_rect(0, 0, gCrashScreen.width, gCrashScreen.height);
+    osViBlack(FALSE);
+    osViSwapBuffer(gCrashScreen.framebuffer);
+    return;
+#else
     s16 cause;
     __OSThreadContext *tc = &thread->context;
 
@@ -245,12 +446,21 @@ void draw_crash_screen(OSThread *thread) {
 #endif
     osViBlack(FALSE);
     osViSwapBuffer(gCrashScreen.framebuffer);
+#endif
 }
 
 OSThread *get_crashed_thread(void) {
     OSThread *thread;
 
-    thread = __osGetCurrFaultedThread();
+    thread = __osFaultedThread;
+    if (thread != NULL) {
+        if (thread->priority > OS_PRIORITY_IDLE && thread->priority < OS_PRIORITY_APPMAX
+            && (thread->flags & 3) != 0) {
+            return thread;
+        }
+    }
+
+    thread = __osActiveQueue;
     while (thread->priority != -1) {
         if (thread->priority > OS_PRIORITY_IDLE && thread->priority < OS_PRIORITY_APPMAX
             && (thread->flags & 3) != 0) {

@@ -18,6 +18,10 @@
 #include "print.h"
 #include "segment2.h"
 #include "segment_symbols.h"
+
+#ifdef CRASH_SCREEN_INCLUDED
+void crash_screen_init(void);
+#endif
 #include "rumble_init.h"
 
 
@@ -649,6 +653,9 @@ void thread5_game_loop(UNUSED void *arg) {
     CN_DEBUG_PRINTF(("start gfx thread\n"));
 
     setup_game_memory();
+#ifdef CRASH_SCREEN_INCLUDED
+    crash_screen_init();
+#endif
 #if ENABLE_RUMBLE
     init_rumble_pak_scheduler_queue();
 #endif

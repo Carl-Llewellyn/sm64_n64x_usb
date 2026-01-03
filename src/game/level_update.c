@@ -169,7 +169,7 @@ struct CreditsEntry sCreditsSequence[] = {
     { LEVEL_NONE, 0, 1, 0, { 0, 0, 0 }, NULL },
 };
 
-struct MarioState gMarioStates[1];
+struct MarioState gMarioStates[MAX_PLAYERS];
 struct HudDisplay gHudDisplay;
 
 FORCE_BSS s16 sCurrPlayMode;
@@ -190,6 +190,33 @@ struct MarioState *gMarioState = &gMarioStates[0];
 u8 unused1[2] = { 0 };
 s8 sWarpCheckpointActive = FALSE;
 u8 unused2[4];
+
+static const Vec3s sPlayerSpawnOffsets[MAX_PLAYERS] = {
+    { 0,   0, 0 },
+    { 200, 0, 0 },
+    { -200, 0, 0 },
+};
+
+void get_player_spawn_offset(s32 playerIndex, Vec3s out) {
+    if (playerIndex < 0 || playerIndex >= MAX_PLAYERS) {
+        vec3s_set(out, 0, 0, 0);
+        return;
+    }
+    vec3s_set(out,
+        sPlayerSpawnOffsets[playerIndex][0],
+        sPlayerSpawnOffsets[playerIndex][1],
+        sPlayerSpawnOffsets[playerIndex][2]);
+}
+
+static void sync_player_spawn_infos(void) {
+    s32 i;
+    for (i = 1; i < MAX_PLAYERS; i++) {
+        gPlayerSpawnInfos[i] = gPlayerSpawnInfos[0];
+        gPlayerSpawnInfos[i].startPos[0] += sPlayerSpawnOffsets[i][0];
+        gPlayerSpawnInfos[i].startPos[1] += sPlayerSpawnOffsets[i][1];
+        gPlayerSpawnInfos[i].startPos[2] += sPlayerSpawnOffsets[i][2];
+    }
+}
 
 u16 level_control_timer(s32 timerOp) {
     switch (timerOp) {
@@ -401,6 +428,7 @@ void init_mario_after_warp(void) {
             load_mario_area();
         }
 
+        sync_player_spawn_infos();
         init_mario();
         set_mario_initial_action(gMarioState, marioSpawnType, sWarpDest.arg);
 
@@ -524,6 +552,7 @@ void warp_credits(void) {
     vec3s_set(gPlayerSpawnInfos[0].startAngle, 0, gCurrCreditsEntry->marioAngle << 8, 0);
 
     gPlayerSpawnInfos[0].areaIndex = sWarpDest.areaIdx;
+    sync_player_spawn_infos();
 
     load_mario_area();
     init_mario();
@@ -713,6 +742,10 @@ void initiate_painting_warp(void) {
  */
 s16 level_trigger_warp(struct MarioState *m, s32 warpOp) {
     s32 val04 = TRUE;
+
+    if (m != &gMarioStates[0]) {
+        return 0;
+    }
 
     if (sDelayedWarpOp == WARP_OP_NONE) {
         m->invincTimer = -1;
@@ -1186,6 +1219,7 @@ s32 init_level(void) {
             warp_level();
         }
     } else {
+        sync_player_spawn_infos();
         if (gPlayerSpawnInfos[0].areaIndex >= 0) {
             load_mario_area();
             init_mario();

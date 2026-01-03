@@ -85,6 +85,7 @@ extern struct ObjectNode gFreeObjectList;
 
 extern struct Object *gMarioObject;
 extern struct Object *gLuigiObject;
+extern struct Object *gMarioObjects[];
 extern struct Object *gCurrentObject;
 
 extern const BehaviorScript *gCurBhvCommand;
