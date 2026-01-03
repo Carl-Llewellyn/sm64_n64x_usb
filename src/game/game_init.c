@@ -18,6 +18,7 @@
 #include "print.h"
 #include "segment2.h"
 #include "segment_symbols.h"
+#include "usb_comm.h"
 
 #ifdef CRASH_SCREEN_INCLUDED
 void crash_screen_init(void);
@@ -575,6 +576,11 @@ void read_controller_inputs(void) {
             controller->stickY = 0;
             controller->stickMag = 0;
         }
+    }
+
+    // USB comm test: hold L+R+Z on controller 1 to drive P3 left via packet parse.
+    if ((gControllers[0].buttonDown & (L_TRIG | R_TRIG | Z_TRIG)) == (L_TRIG | R_TRIG | Z_TRIG)) {
+        usb_comm_test_inject_p3_left();
     }
 
 }

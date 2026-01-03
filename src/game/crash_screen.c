@@ -7,6 +7,7 @@
 
 #if defined(TARGET_N64)
 
+#include "lib/src/libultra_internal.h"
 #include "lib/src/printf.h"
 
 extern uintptr_t sSegmentTable[32];
@@ -124,8 +125,13 @@ char *gFpcsrDesc[6] = {
 
 
 extern u64 osClockRate;
+#ifdef AVOID_UB
+extern OSThread *__osFaultedThread;
+#define __osActiveQueue __osThreadTail_fix.tlnext
+#else
 extern OSThread *__osFaultedThread;
 extern OSThread *__osActiveQueue;
+#endif
 
 struct {
     OSThread thread;
