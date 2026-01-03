@@ -54,9 +54,10 @@ uintptr_t gPhysicalFramebuffers[3];
 uintptr_t gPhysicalZBuffer;
 
 // Mario Anims and Demo allocation
-void *gMarioAnimsMemAlloc;
+static u8 sMarioAnimsMemAlloc[MAX_PLAYERS][0x4000];
+void *gMarioAnimsMemAlloc[MAX_PLAYERS];
 void *gDemoInputsMemAlloc;
-struct DmaHandlerList gMarioAnimsBuf;
+struct DmaHandlerList gMarioAnimsBuf[MAX_PLAYERS];
 struct DmaHandlerList gDemoInputsBuf;
 
 // fillers
@@ -65,6 +66,12 @@ static s32 sUnusedGameInitValue = 0;
 
 // General timer that runs as the game starts
 u32 gGlobalTimer = 0;
+volatile u32 gBootTrace = 0;
+
+static void trace_write_u32(volatile u32 *addr, u32 value) {
+    volatile u32 *uncached = (volatile u32 *)(((uintptr_t) addr) | 0xA0000000);
+    *uncached = value;
+}
 
 // Framebuffer rendering values (max 3)
 u16 sRenderedFramebuffer = 0;
@@ -369,17 +376,25 @@ void display_and_vsync(void) {
    // usb_write(DATATYPE_TEXT, &gMarioStates[0].pos[0], sizeof(gMarioStates[0].pos[0]));
 
     profiler_log_thread5_time(BEFORE_DISPLAY_LISTS);
+    trace_write_u32(&gBootTrace, 0x30);
     osRecvMesg(&gGfxVblankQueue, &gMainReceivedMesg, OS_MESG_BLOCK);
+    trace_write_u32(&gBootTrace, 0x31);
     if (gGoddardVblankCallback != NULL) {
         gGoddardVblankCallback();
         gGoddardVblankCallback = NULL;
     }
+    trace_write_u32(&gBootTrace, 0x32);
     exec_display_list(&gGfxPool->spTask);
     profiler_log_thread5_time(AFTER_DISPLAY_LISTS);
+    trace_write_u32(&gBootTrace, 0x33);
     osRecvMesg(&gGameVblankQueue, &gMainReceivedMesg, OS_MESG_BLOCK);
+    trace_write_u32(&gBootTrace, 0x34);
     osViSwapBuffer((void *) PHYSICAL_TO_VIRTUAL(gPhysicalFramebuffers[sRenderedFramebuffer]));
+    trace_write_u32(&gBootTrace, 0x35);
     profiler_log_thread5_time(THREAD5_END);
+    trace_write_u32(&gBootTrace, 0x36);
     osRecvMesg(&gGameVblankQueue, &gMainReceivedMesg, OS_MESG_BLOCK);
+    trace_write_u32(&gBootTrace, 0x37);
     if (++sRenderedFramebuffer == 3) {
         sRenderedFramebuffer = 0;
     }
@@ -539,7 +554,7 @@ void read_controller_inputs(void) {
     }
     run_demo_inputs();
 
-    for (i = 0; i < 2; i++) {
+    for (i = 0; i < MAX_PLAYERS; i++) {
         struct Controller *controller = &gControllers[i];
 
         // if we're receiving inputs, update the controller struct with the new button info.
@@ -562,23 +577,13 @@ void read_controller_inputs(void) {
         }
     }
 
-    // For some reason, player 1's inputs are copied to player 3's port.
-    // This potentially may have been a way the developers "recorded"
-    // the inputs for demos, despite record_demo existing.
-    gPlayer3Controller->rawStickX = gPlayer1Controller->rawStickX;
-    gPlayer3Controller->rawStickY = gPlayer1Controller->rawStickY;
-    gPlayer3Controller->stickX = gPlayer1Controller->stickX;
-    gPlayer3Controller->stickY = gPlayer1Controller->stickY;
-    gPlayer3Controller->stickMag = gPlayer1Controller->stickMag;
-    gPlayer3Controller->buttonPressed = gPlayer1Controller->buttonPressed;
-    gPlayer3Controller->buttonDown = gPlayer1Controller->buttonDown;
 }
 
 /**
  * Initialize the controller structs to point at the OSCont information.
  */
 void init_controllers(void) {
-    s16 port, cont;
+    s16 port;
 
     // Set controller 1 to point to the set of status/pads for input 1 and
     // init the controllers.
@@ -595,18 +600,16 @@ void init_controllers(void) {
     // only 2 are connected here. The third seems to have been reserved for debug
     // purposes and was never connected in the retail ROM, thus gPlayer3Controller
     // cannot be used, despite being referenced in various code.
-    for (cont = 0, port = 0; port < 4 && cont < 2; port++) {
-        // Is controller plugged in?
-        if (gControllerBits & (1 << port)) {
-            // The game allows you to have just 1 controller plugged
-            // into any port in order to play the game. this was probably
-            // so if any of the ports didn't work, you can have controllers
-            // plugged into any of them and it will work.
+    for (port = 0; port < 3; port++) {
+        // For multiplayer, map controller N to port N.
+        gControllers[port].statusData = &gControllerStatuses[port];
 #if ENABLE_RUMBLE
-            gControllers[cont].port = port;
+        gControllers[port].port = port;
 #endif
-            gControllers[cont].statusData = &gControllerStatuses[port];
-            gControllers[cont++].controllerData = &gControllerPads[port];
+        if (gControllerBits & (1 << port)) {
+            gControllers[port].controllerData = &gControllerPads[port];
+        } else {
+            gControllers[port].controllerData = NULL;
         }
     }
 }
@@ -619,6 +622,7 @@ void init_controllers(void) {
  */
 void setup_game_memory(void) {
     UNUSED u8 filler[8];
+    s32 i;
 
     // Setup general Segment 0
     set_segment_base_addr(0, (void *) 0x80000000);
@@ -631,9 +635,13 @@ void setup_game_memory(void) {
     gPhysicalFramebuffers[1] = VIRTUAL_TO_PHYSICAL(gFramebuffer1);
     gPhysicalFramebuffers[2] = VIRTUAL_TO_PHYSICAL(gFramebuffer2);
     // Setup Mario Animations
-    gMarioAnimsMemAlloc = main_pool_alloc(0x4000, MEMORY_POOL_LEFT);
-    set_segment_base_addr(17, (void *) gMarioAnimsMemAlloc);
-    setup_dma_table_list(&gMarioAnimsBuf, gMarioAnims, gMarioAnimsMemAlloc);
+    for (i = 0; i < MAX_PLAYERS; i++) {
+        gMarioAnimsMemAlloc[i] = sMarioAnimsMemAlloc[i];
+        if (i == 0) {
+            set_segment_base_addr(17, (void *) gMarioAnimsMemAlloc[i]);
+        }
+        setup_dma_table_list(&gMarioAnimsBuf[i], gMarioAnims, gMarioAnimsMemAlloc[i]);
+    }
     // Setup Demo Inputs List
     gDemoInputsMemAlloc = main_pool_alloc(0x800, MEMORY_POOL_LEFT);
     set_segment_base_addr(24, (void *) gDemoInputsMemAlloc);
@@ -652,10 +660,13 @@ void thread5_game_loop(UNUSED void *arg) {
 
     CN_DEBUG_PRINTF(("start gfx thread\n"));
 
+    trace_write_u32(&gBootTrace, 0x10);
     setup_game_memory();
+    trace_write_u32(&gBootTrace, 0x11);
 #ifdef CRASH_SCREEN_INCLUDED
     crash_screen_init();
 #endif
+    trace_write_u32(&gBootTrace, 0x12);
 #if ENABLE_RUMBLE
     init_rumble_pak_scheduler_queue();
 #endif
@@ -663,12 +674,14 @@ void thread5_game_loop(UNUSED void *arg) {
     CN_DEBUG_PRINTF(("init ctrl\n"));
     init_controllers();
     CN_DEBUG_PRINTF(("done ctrl\n"));
+    trace_write_u32(&gBootTrace, 0x13);
 
 #if ENABLE_RUMBLE
     create_thread_6();
 #endif
 
     save_file_load_all();
+    trace_write_u32(&gBootTrace, 0x14);
 
     set_vblank_handler(2, &gGameVblankHandler, &gGameVblankQueue, (OSMesg) 1);
 
@@ -678,8 +691,10 @@ void thread5_game_loop(UNUSED void *arg) {
     play_music(SEQ_PLAYER_SFX, SEQUENCE_ARGS(0, SEQ_SOUND_PLAYER), 0);
     set_sound_mode(save_file_get_sound_mode());
     render_init();
+    trace_write_u32(&gBootTrace, 0x15);
 
     while (TRUE) {
+        trace_write_u32(&gBootTrace, 0x20);
         // If the reset timer is active, run the process to reset the game.
         if (gResetTimer != 0) {
             draw_reset_bars();
@@ -699,9 +714,12 @@ void thread5_game_loop(UNUSED void *arg) {
         audio_game_loop_tick();
         select_gfx_pool();
         read_controller_inputs();
+        trace_write_u32(&gBootTrace, 0x21);
         addr = level_script_execute(addr);
+        trace_write_u32(&gBootTrace, 0x22);
 
         display_and_vsync();
+        trace_write_u32(&gBootTrace, 0x23);
 
         // when debug info is enabled, print the "BUF %d" information.
         if (gShowDebugText) {

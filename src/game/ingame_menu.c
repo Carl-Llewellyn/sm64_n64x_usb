@@ -836,19 +836,19 @@ void handle_menu_scrolling(s8 scrollDirection, s8 *currentIndex, s8 minIndex, s8
     u8 index = 0;
 
     if (scrollDirection == MENU_SCROLL_VERTICAL) {
-        if (gPlayer3Controller->rawStickY > 60) {
+        if (gPlayer1Controller->rawStickY > 60) {
             index++;
         }
 
-        if (gPlayer3Controller->rawStickY < -60) {
+        if (gPlayer1Controller->rawStickY < -60) {
             index += 2;
         }
     } else if (scrollDirection == MENU_SCROLL_HORIZONTAL) {
-        if (gPlayer3Controller->rawStickX > 60) {
+        if (gPlayer1Controller->rawStickX > 60) {
             index += 2;
         }
 
-        if (gPlayer3Controller->rawStickX < -60) {
+        if (gPlayer1Controller->rawStickX < -60) {
             index++;
         }
     }
@@ -2027,8 +2027,8 @@ void render_dialog_entries(void) {
         case MENU_STATE_DIALOG_OPEN:
             gDialogBoxAngle = 0.0f;
 
-            if ((gPlayer3Controller->buttonPressed & A_BUTTON)
-             || (gPlayer3Controller->buttonPressed & B_BUTTON)) {
+            if ((gPlayer1Controller->buttonPressed & A_BUTTON)
+             || (gPlayer1Controller->buttonPressed & B_BUTTON)) {
                 if (gNextDialogPageStartStrIndex == -1) {
                     handle_special_dialog_text(gDialogID);
                     gMenuState = MENU_STATE_DIALOG_CLOSING;
@@ -3000,10 +3000,10 @@ s16 render_pause_screen(void) {
             }
 
 #ifdef VERSION_EU
-            if (gPlayer3Controller->buttonPressed & (A_BUTTON | START_BUTTON | Z_TRIG))
+            if (gPlayer1Controller->buttonPressed & (A_BUTTON | START_BUTTON | Z_TRIG))
 #else
-            if ((gPlayer3Controller->buttonPressed & A_BUTTON)
-             || (gPlayer3Controller->buttonPressed & START_BUTTON))
+            if ((gPlayer1Controller->buttonPressed & A_BUTTON)
+             || (gPlayer1Controller->buttonPressed & START_BUTTON))
 #endif
             {
                 level_set_transition(0, NULL);
@@ -3028,10 +3028,10 @@ s16 render_pause_screen(void) {
             render_pause_castle_main_strings(104, 60);
 
 #ifdef VERSION_EU
-            if (gPlayer3Controller->buttonPressed & (A_BUTTON | START_BUTTON | Z_TRIG))
+            if (gPlayer1Controller->buttonPressed & (A_BUTTON | START_BUTTON | Z_TRIG))
 #else
-            if ((gPlayer3Controller->buttonPressed & A_BUTTON)
-             || (gPlayer3Controller->buttonPressed & START_BUTTON))
+            if ((gPlayer1Controller->buttonPressed & A_BUTTON)
+             || (gPlayer1Controller->buttonPressed & START_BUTTON))
 #endif
             {
                 level_set_transition(0, NULL);
@@ -3401,10 +3401,10 @@ s16 render_course_complete_screen(void) {
 #endif
 
             if (gCourseCompleteScreenTimer > 110
-                && ((gPlayer3Controller->buttonPressed & A_BUTTON)
-                 || (gPlayer3Controller->buttonPressed & START_BUTTON)
+                && ((gPlayer1Controller->buttonPressed & A_BUTTON)
+                 || (gPlayer1Controller->buttonPressed & START_BUTTON)
 #ifdef VERSION_EU
-                 || (gPlayer3Controller->buttonPressed & Z_TRIG)
+                 || (gPlayer1Controller->buttonPressed & Z_TRIG)
 #endif
                 )) {
                 level_set_transition(0, NULL);

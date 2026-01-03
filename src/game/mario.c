@@ -1808,7 +1808,7 @@ static void init_single_mario(struct MarioState *m, struct SpawnInfo *spawnInfo,
     m->statusForCamera = &gPlayerCameraState[playerIndex];
     m->marioBodyState = &gBodyStates[playerIndex];
     m->controller = &gControllers[playerIndex];
-    m->animList = &gMarioAnimsBuf;
+    m->animList = &gMarioAnimsBuf[playerIndex];
 
     m->actionTimer = 0;
     m->framesSinceA = 0xFF;
@@ -1907,7 +1907,7 @@ void init_mario_from_save_file(void) {
         m->statusForCamera = &gPlayerCameraState[i];
         m->marioBodyState = &gBodyStates[i];
         m->controller = &gControllers[i];
-        m->animList = &gMarioAnimsBuf;
+        m->animList = &gMarioAnimsBuf[i];
 
         m->numCoins = 0;
         m->numStars =

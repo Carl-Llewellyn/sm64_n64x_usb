@@ -46,6 +46,13 @@ OSMesg gUnknownMesgBuf[16];
 
 struct VblankHandler *gVblankHandler1 = NULL;
 struct VblankHandler *gVblankHandler2 = NULL;
+volatile u32 gMainTrace = 0;
+volatile u32 gMainTraceFlags = 0;
+
+static void trace_write_u32(volatile u32 *addr, u32 value) {
+    volatile u32 *uncached = (volatile u32 *)(((uintptr_t) addr) | 0xA0000000);
+    *uncached = value;
+}
 struct SPTask *gActiveSPTask = NULL;
 struct SPTask *sCurrentAudioSPTask = NULL;
 struct SPTask *sCurrentDisplaySPTask = NULL;
@@ -208,6 +215,8 @@ void interrupt_gfx_sptask(void) {
 }
 
 void start_gfx_sptask(void) {
+    trace_write_u32(&gMainTrace, 0x43);
+    trace_write_u32(&gMainTraceFlags, gMainTraceFlags | 0x02);
     if (gActiveSPTask == NULL && sCurrentDisplaySPTask != NULL
         && sCurrentDisplaySPTask->state == SPTASK_STATE_NOT_STARTED) {
         profiler_log_gfx_time(TASKS_QUEUED);
@@ -224,6 +233,8 @@ void pretend_audio_sptask_done(void) {
 void handle_vblank(void) {
     UNUSED u8 filler[4];
 
+    trace_write_u32(&gMainTrace, 0x40);
+    trace_write_u32(&gMainTraceFlags, gMainTraceFlags | 0x01);
     stub_main_3();
     gNumVblanks++;
 #if defined(VERSION_SH) || defined(VERSION_CN)
@@ -277,6 +288,8 @@ void handle_vblank(void) {
 void handle_sp_complete(void) {
     struct SPTask *curSPTask = gActiveSPTask;
 
+    trace_write_u32(&gMainTrace, 0x41);
+    trace_write_u32(&gMainTraceFlags, gMainTraceFlags | 0x04);
     gActiveSPTask = NULL;
 
     if (curSPTask->state == SPTASK_STATE_INTERRUPTED) {
@@ -323,6 +336,8 @@ void handle_sp_complete(void) {
 }
 
 void handle_dp_complete(void) {
+    trace_write_u32(&gMainTrace, 0x42);
+    trace_write_u32(&gMainTraceFlags, gMainTraceFlags | 0x08);
     // Gfx SP task is completely done.
     if (sCurrentDisplaySPTask->msgqueue != NULL) {
         osSendMesg(sCurrentDisplaySPTask->msgqueue, sCurrentDisplaySPTask->msg, OS_MESG_NOBLOCK);
@@ -401,6 +416,8 @@ void exec_display_list(struct SPTask *spTask) {
         if (sCurrentDisplaySPTask == NULL) {
             sCurrentDisplaySPTask = spTask;
             sNextDisplaySPTask = NULL;
+            trace_write_u32(&gMainTrace, 0x44);
+            trace_write_u32(&gMainTraceFlags, gMainTraceFlags | 0x10);
             osSendMesg(&gIntrMesgQueue, (OSMesg) MESG_START_GFX_SPTASK, OS_MESG_NOBLOCK);
         } else {
             sNextDisplaySPTask = spTask;
