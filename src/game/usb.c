@@ -11,12 +11,8 @@
 #include "game_init.h"
 #include "level_update.h"
 #include "PR/os_pi.h"
+#include "usb_comm.h"
 
-s32 prevInt = 0;
-
-int usb_run = 0;
-
-u8 incomingState[22] = {0};
 
 //split whatever comes in to write 32bit
 void send_32_bit(int len, u8 *data){
@@ -70,7 +66,7 @@ void read_incoming(u8 *data){
 
 
     for (i = 0; i < len; i += 4) {
-        int n = (len - i < 4) ? (len - i) : 4;
+        n = (len - i < 4) ? (len - i) : 4;
         WAIT_ON_IO_BUSY(IO_READ(PI_STATUS_REG));
         word = IO_READ((u32)curr_read_add);//read whole word
         curr_read_add++;
@@ -78,16 +74,9 @@ void read_incoming(u8 *data){
     }
 }
 
-void usb_init(void){
-    if(usb_run == 1){
-        return;
-    }
-    usb_run = 1;
-    //osCreateMesgQueue(&timerQueue, &timerMsg, 1);
-}
-
 void usb_update(void) {
-   // usb_init(); - prob don't need to do anything. Previously I had thread messages going.
+    u8 incomingState[22] = {0};
+
     if (gMarioObject != NULL) {
         __osPiGetAccess();
        // prevInt = __osDisableInt();//disable interrupts
@@ -98,6 +87,7 @@ void usb_update(void) {
         //read incoming data
         read_incoming(incomingState);
         __osPiRelAccess();
+        usb_comm_consume_bytes(incomingState, SM64_USB_PACKET_SIZE);
         //__osRestoreInt(prevInt);//END DISABLE INTERRUPTS
     }   
 }
