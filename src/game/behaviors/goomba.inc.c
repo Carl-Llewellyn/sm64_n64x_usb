@@ -274,32 +274,9 @@ void huge_goomba_weakly_attacked(void) {
  * Update function for goomba.
  */
 void bhv_goomba_update(void) {
+    // PARTIAL_UPDATE
 
     f32 animSpeed;
-    f32 x;
-    f32 y;
-    f32 z;
-
-    s32 prevInt = __osDisableInt();
-    x = read_usb_posX;
-    y = read_usb_posY;
-    z = read_usb_posZ;
-    __osRestoreInt(prevInt);
-
-    // Protect against NaN/denorm/garbage USB data that can crash wall collision.
-    if (x != x || x < -8000.0f || x > 8000.0f || (x > -1.0e-20f && x < 1.0e-20f)) {
-        x = 0.0f;
-    }
-    if (y != y || y < -8000.0f || y > 8000.0f || (y > -1.0e-20f && y < 1.0e-20f)) {
-        y = 0.0f;
-    }
-    if (z != z || z < -8000.0f || z > 8000.0f || (z > -1.0e-20f && z < 1.0e-20f)) {
-        z = 0.0f;
-    }
-
-    o->oPosX = x;
-    o->oPosY = y;
-    o->oPosZ = z;
 
     if (obj_update_standard_actions(o->oGoombaScale)) {
         // If this goomba has a spawner and mario moved away from the spawner, unload
