@@ -13,6 +13,40 @@
 #include "PR/os_pi.h"
 #include "usb_comm.h"
 
+static char gBuf[32];
+
+#define SM64_USB_DEBUG_PRINT 1
+
+static void usb_print_incoming(const u8 *data) {
+    int i = 0;
+    int y = 12;
+    u16 buttons = sm64usb_read_be16(&data[SM64_USB_O_BUTTONS]);
+    s8 stick_x = (s8)data[SM64_USB_O_STICK_X];
+    s8 stick_y = (s8)data[SM64_USB_O_STICK_Y];
+
+    sprintf(gBuf, "rx %02X %02X %02X %02X",
+            data[0], data[1], data[2], data[3]);
+    print_text(0, y, gBuf);
+    y += 20;
+
+    for (i = 4; i < 20; i += 4) {
+        sprintf(gBuf, "%02d: %02X %02X %02X %02X",
+                i, data[i + 0], data[i + 1], data[i + 2], data[i + 3]);
+        print_text(0, y, gBuf);
+        y += 20;
+    }
+
+    sprintf(gBuf, "20: %02X %02X",
+            data[20], data[21]);
+    print_text(0, y, gBuf);
+    y += 20;
+
+    sprintf(gBuf, "pid=%d btn=%04X sx=%d sy=%d",
+            (int)data[SM64_USB_O_PLAYER_ID],
+            (unsigned int)buttons,
+            (int)stick_x, (int)stick_y);
+    print_text(0, y, gBuf);
+}
 
 //split whatever comes in to write 32bit
 void send_32_bit(int len, u8 *data){
@@ -75,7 +109,7 @@ void read_incoming(u8 *data){
 }
 
 void usb_update(void) {
-    u8 incomingState[22] = {0};
+    u8 incomingState[SM64_USB_PACKET_SIZE] = {0};
 
     if (gMarioObject != NULL) {
         __osPiGetAccess();
@@ -88,6 +122,10 @@ void usb_update(void) {
         read_incoming(incomingState);
         __osPiRelAccess();
         usb_comm_consume_bytes(incomingState, SM64_USB_PACKET_SIZE);
+        usb_comm_apply_remote_inputs();
+#if SM64_USB_DEBUG_PRINT
+        usb_print_incoming(incomingState);
+#endif
         //__osRestoreInt(prevInt);//END DISABLE INTERRUPTS
     }   
 }
