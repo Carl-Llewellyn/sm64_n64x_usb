@@ -465,8 +465,8 @@ void thread1_idle(UNUSED void *arg) {
         osStartThread(&gMainThread);
     }
 
-    create_thread(&gUSBThread, 7, thread7_usb_loop, NULL, gThread7Stack + 0x2000, 5);
-    osStartThread(&gUSBThread);
+   // create_thread(&gUSBThread, 7, thread7_usb_loop, NULL, gThread7Stack + 0x2000, 5);
+   // osStartThread(&gUSBThread);
 
     osSetThreadPri(NULL, 0);
 

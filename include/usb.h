@@ -17,7 +17,7 @@
     while (stat & (PI_STATUS_IO_BUSY | PI_STATUS_DMA_BUSY))                                            \
         stat = IO_READ(PI_STATUS_REG);
 
-// Align to 8-byte boundary for DMA requirements
+// Align to 8-byte boundary for DMA 
 #ifdef __GNUC__
 #define ALIGNED8 __attribute__((aligned(8)))
 #else
@@ -44,6 +44,6 @@ extern f32 __osAtomicWriteF32(f32 *src, f32 *dest);
 
 extern void incoming_usb_pos(f32 *x, f32 *y, f32 *z) ;
 
-extern void thread7_usb_loop(UNUSED void *arg);
+extern void usb_update(void);
 
 #endif

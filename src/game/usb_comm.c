@@ -3,31 +3,43 @@
 #include <PR/ultratypes.h>
 #include <PR/os_cont.h>
 
-#include "game/game_init.h"
+#include "game_init.h"
+#include "macros.h"
+
+#ifdef TARGET_PS2
+#include <kernel.h>
+#endif
 
 extern void adjust_analog_stick(struct Controller *controller);
 
-static u16 sUsbSeq;
+/* how long (in frames) a remote player's last packet stays valid. */
+#ifndef SM64_USB_STALE_FRAMES
+#define SM64_USB_STALE_FRAMES 30
+#endif
 
-static u16 usb_comm_crc16_ccitt(const u8 *data, u16 len) {
-    u16 crc = 0xFFFF;
-    u16 i;
-    u16 bit;
+typedef struct {
+    u8  valid;
+    u16 buttons;
+    s8  stick_x;
+    s8  stick_y;
+    s32 x;
+    s32 y;
+    s32 z;
+    u32 last_seen_frame;
+} Sm64UsbRemoteState;
 
-    for (i = 0; i < len; i++) {
-        crc ^= (u16)data[i] << 8;
-        for (bit = 0; bit < 8; bit++) {
-            if (crc & 0x8000) {
-                crc = (u16)((crc << 1) ^ 0x1021);
-            } else {
-                crc <<= 1;
-            }
-        }
+static Sm64UsbRemoteState sRemoteStates[SM64_USB_MAX_PLAYERS];
+static u8  sParseBuf[SM64_USB_PACKET_SIZE];
+static u32 sParseIndex = 0;
+
+static void sm64usb_memcpy(void *dst, const void *src, u32 n) {
+    u8 *d = (u8 *)dst;
+    const u8 *s = (const u8 *)src;
+    u32 i;
+    for (i = 0; i < n; i++) {
+        d[i] = s[i];
     }
-
-    return crc;
 }
-
 static void usb_comm_update_controller(struct Controller *controller, u16 buttons, s8 stick_x, s8 stick_y) {
     controller->rawStickX = stick_x;
     controller->rawStickY = stick_y;
@@ -36,105 +48,95 @@ static void usb_comm_update_controller(struct Controller *controller, u16 button
     adjust_analog_stick(controller);
 }
 
-void usb_comm_reset(void) {
-    sUsbSeq = 0;
-}
-
-void usb_comm_apply_player_input(u8 player_index, u16 buttons, s8 stick_x, s8 stick_y) {
-    u8 slot = (u8)(player_index + 1);
-
-    if (slot >= ARRAY_COUNT(gControllers)) {
+/* Store already-decoded fields (host-endian), so the rest of the game never worries about byte order. */
+static void usb_comm_store_decoded(u8 player_id, u16 buttons, s8 stick_x, s8 stick_y, s32 x, s32 y, s32 z) {
+    if (player_id >= SM64_USB_MAX_PLAYERS) {
         return;
     }
-
-    // Test hook: hold L+R+Z on P3 to force a left run.
-    if (player_index == 1 && ((buttons & (L_TRIG | R_TRIG | Z_TRIG)) == (L_TRIG | R_TRIG | Z_TRIG))) {
-        stick_x = -64;
-        stick_y = 0;
-    }
-
-    usb_comm_update_controller(&gControllers[slot], buttons, stick_x, stick_y);
+    sRemoteStates[player_id].valid = 1;
+    sRemoteStates[player_id].buttons = buttons;
+    sRemoteStates[player_id].stick_x = stick_x;
+    sRemoteStates[player_id].stick_y = stick_y;
+    sRemoteStates[player_id].x = x;
+    sRemoteStates[player_id].y = y;
+    sRemoteStates[player_id].z = z;
+    sRemoteStates[player_id].last_seen_frame = gGlobalTimer;
 }
 
-void usb_comm_test_inject_p3_left(void) {
-    u8 packet[USB_COMM_HEADER_SIZE + (2 * USB_COMM_RECORD_SIZE) + USB_COMM_CRC_SIZE];
-    u16 crc;
-    u16 offset = USB_COMM_HEADER_SIZE;
+void usb_comm_consume_bytes(const u8 *data, u32 len) {
+    u32 i;
 
-    packet[0] = USB_COMM_SYNC0;
-    packet[1] = USB_COMM_SYNC1;
-    packet[2] = USB_COMM_VERSION;
-    packet[3] = (u8)(sUsbSeq++ & 0xFF);
-    packet[4] = 2; // P2 + P3 records
-    packet[5] = 0;
+    if (!data || len == 0) return;
 
-    // P2: neutral
-    packet[offset + 0] = 0;
-    packet[offset + 1] = 0;
-    packet[offset + 2] = 0;
-    packet[offset + 3] = 0;
-    offset += USB_COMM_RECORD_SIZE;
+    for (i = 0; i < len; i++) {
+        u8 byte = data[i];
 
-    // P3: stick left
-    packet[offset + 0] = 0;
-    packet[offset + 1] = 0;
-    packet[offset + 2] = (u8)-64;
-    packet[offset + 3] = 0;
-    offset += USB_COMM_RECORD_SIZE;
+        if (sParseIndex == 0) {
+            if (byte != SM64_USB_SYNC0) continue;
+            sParseBuf[sParseIndex++] = byte;
+            continue;
+        }
 
-    crc = usb_comm_crc16_ccitt(&packet[2], (u16)(sizeof(packet) - 2 - 2));
-    packet[offset + 0] = (u8)(crc >> 8);
-    packet[offset + 1] = (u8)(crc & 0xFF);
+        if (sParseIndex == 1) {
+            if (byte != SM64_USB_SYNC1) { sParseIndex = 0; continue; }
+            sParseBuf[sParseIndex++] = byte;
+            continue;
+        }
 
-    usb_comm_parse_and_apply(packet, (u16)sizeof(packet));
+        sParseBuf[sParseIndex++] = byte;
+
+        if (sParseIndex >= SM64_USB_PACKET_SIZE) {
+            if (sParseBuf[SM64_USB_O_SYNC0] == SM64_USB_SYNC0 &&
+                sParseBuf[SM64_USB_O_SYNC1] == SM64_USB_SYNC1 &&
+                sParseBuf[SM64_USB_O_VERSION] == SM64_USB_VERSION) {
+
+                Sm64UsbPacket pkt;
+                u8  pid;
+                s32 x, y, z;
+                u16 buttons;
+                s8  stick_x, stick_y;
+
+                sm64usb_memcpy(pkt.b, sParseBuf, (u32)SM64_USB_PACKET_SIZE);
+
+                pid     = pkt.b[SM64_USB_O_PLAYER_ID];
+                x       = sm64usb_read_be32(&pkt.b[SM64_USB_O_X]);
+                y       = sm64usb_read_be32(&pkt.b[SM64_USB_O_Y]);
+                z       = sm64usb_read_be32(&pkt.b[SM64_USB_O_Z]);
+                buttons = sm64usb_read_be16(&pkt.b[SM64_USB_O_BUTTONS]);
+                stick_x = (s8)pkt.b[SM64_USB_O_STICK_X];
+                stick_y = (s8)pkt.b[SM64_USB_O_STICK_Y];
+
+                usb_comm_store_decoded(pid, buttons, stick_x, stick_y, x, y, z);
+            }
+
+            sParseIndex = 0;
+        }
+    }
 }
 
-s32 usb_comm_parse_and_apply(const u8 *data, u16 len) {
-    u16 expected_len;
-    u16 crc_expected;
-    u16 crc_actual;
-    u8 player_count;
-    u8 seq;
-    u16 offset;
-    u8 i;
+void usb_comm_apply_remote_inputs(void) {
+    u8 player_id;
+    const u32 now = gGlobalTimer;
 
-    if (len < USB_COMM_HEADER_SIZE + USB_COMM_CRC_SIZE) {
-        return USB_COMM_ERR_SHORT;
+    for (player_id = 0; player_id < SM64_USB_MAX_PLAYERS; player_id++) {
+        u8 slot = (u8)(player_id + 1);
+
+        if (!sRemoteStates[player_id].valid) {
+            continue;
+        }
+
+        /* Drop stale controllers so they don't "stick" forever if the sender disappears. */
+        if ((u32)(now - sRemoteStates[player_id].last_seen_frame) > (u32)SM64_USB_STALE_FRAMES) {
+            sRemoteStates[player_id].valid = 0;
+            continue;
+        }
+
+        if (slot < ARRAY_COUNT(gControllers)) {
+            usb_comm_update_controller(&gControllers[slot],
+                                       sRemoteStates[player_id].buttons,
+                                       sRemoteStates[player_id].stick_x,
+                                       sRemoteStates[player_id].stick_y);
+        }
     }
 
-    if (data[0] != USB_COMM_SYNC0 || data[1] != USB_COMM_SYNC1) {
-        return USB_COMM_ERR_SYNC;
-    }
-
-    if (data[2] != USB_COMM_VERSION) {
-        return USB_COMM_ERR_VERSION;
-    }
-
-    seq = data[3];
-    player_count = data[4];
-
-    expected_len = (u16)(USB_COMM_HEADER_SIZE + (player_count * USB_COMM_RECORD_SIZE) + USB_COMM_CRC_SIZE);
-    if (len != expected_len) {
-        return USB_COMM_ERR_LEN;
-    }
-
-    crc_expected = (u16)((data[len - 2] << 8) | data[len - 1]);
-    crc_actual = usb_comm_crc16_ccitt(&data[2], (u16)(len - 2 - 2));
-    if (crc_actual != crc_expected) {
-        return USB_COMM_ERR_CRC;
-    }
-
-    sUsbSeq = seq;
-
-    offset = USB_COMM_HEADER_SIZE;
-    for (i = 0; i < player_count; i++) {
-        u16 buttons = (u16)((data[offset] << 8) | data[offset + 1]);
-        s8 stick_x = (s8)data[offset + 2];
-        s8 stick_y = (s8)data[offset + 3];
-
-        usb_comm_apply_player_input(i, buttons, stick_x, stick_y);
-        offset = (u16)(offset + USB_COMM_RECORD_SIZE);
-    }
-
-    return USB_COMM_OK;
 }
