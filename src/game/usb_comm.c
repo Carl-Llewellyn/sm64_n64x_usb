@@ -4,6 +4,9 @@
 #include <PR/os_cont.h>
 
 #include "game_init.h"
+#include "level_update.h"
+#include "object_fields.h"
+#include "object_list_processor.h"
 #include "macros.h"
 
 #ifdef TARGET_PS2
@@ -32,6 +35,33 @@ static Sm64UsbRemoteState sRemoteStates[SM64_USB_MAX_PLAYERS];
 static u8  sParseBuf[SM64_USB_PACKET_SIZE];
 static u32 sParseIndex = 0;
 
+#ifndef SM64_USB_POS_SNAP_THRESHOLD
+#define SM64_USB_POS_SNAP_THRESHOLD 600.0f
+#endif
+
+#ifndef SM64_USB_POS_MAX_ABS
+#define SM64_USB_POS_MAX_ABS 30000.0f
+#endif
+
+static f32 sm64usb_s32_to_f32(s32 v) {
+    union {
+        s32 i;
+        f32 f;
+    } u;
+    u.i = v;
+    return u.f;
+}
+
+static int sm64usb_pos_valid(f32 x, f32 y, f32 z) {
+    if (x != x || y != y || z != z) {
+        return 0;
+    }
+    if (x < -SM64_USB_POS_MAX_ABS || x > SM64_USB_POS_MAX_ABS) return 0;
+    if (y < -SM64_USB_POS_MAX_ABS || y > SM64_USB_POS_MAX_ABS) return 0;
+    if (z < -SM64_USB_POS_MAX_ABS || z > SM64_USB_POS_MAX_ABS) return 0;
+    return 1;
+}
+
 static void sm64usb_memcpy(void *dst, const void *src, u32 n) {
     u8 *d = (u8 *)dst;
     const u8 *s = (const u8 *)src;
@@ -46,6 +76,40 @@ static void usb_comm_update_controller(struct Controller *controller, u16 button
     controller->buttonPressed = buttons & (buttons ^ controller->buttonDown);
     controller->buttonDown = buttons;
     adjust_analog_stick(controller);
+}
+
+static void usb_comm_apply_remote_position(u8 slot, const Sm64UsbRemoteState *state) {
+    struct MarioState *m = &gMarioStates[slot];
+    struct Object *obj = gMarioObjects[slot];
+    f32 x = sm64usb_s32_to_f32(state->x);
+    f32 y = sm64usb_s32_to_f32(state->y);
+    f32 z = sm64usb_s32_to_f32(state->z);
+    f32 dx = x - m->pos[0];
+    f32 dy = y - m->pos[1];
+    f32 dz = z - m->pos[2];
+    f32 dist2 = dx * dx + dy * dy + dz * dz;
+    f32 thresh = SM64_USB_POS_SNAP_THRESHOLD;
+
+    if (obj == NULL) {
+        return;
+    }
+    if (!sm64usb_pos_valid(x, y, z)) {
+        return;
+    }
+    if (dist2 <= (thresh * thresh)) {
+        return;
+    }
+
+    m->pos[0] = x;
+    m->pos[1] = y;
+    m->pos[2] = z;
+
+    obj->oPosX = x;
+    obj->oPosY = y;
+    obj->oPosZ = z;
+    obj->header.gfx.pos[0] = x;
+    obj->header.gfx.pos[1] = y;
+    obj->header.gfx.pos[2] = z;
 }
 
 /* Store already-decoded fields (host-endian), so the rest of the game never worries about byte order. */
@@ -136,6 +200,7 @@ void usb_comm_apply_remote_inputs(void) {
                                        sRemoteStates[player_id].buttons,
                                        sRemoteStates[player_id].stick_x,
                                        sRemoteStates[player_id].stick_y);
+            usb_comm_apply_remote_position(slot, &sRemoteStates[player_id]);
         }
     }
 
