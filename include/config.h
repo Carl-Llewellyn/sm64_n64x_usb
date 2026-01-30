@@ -41,6 +41,9 @@
 // Player count for local Mario instances.
 #define MAX_PLAYERS 3
 
+// If false, USB packets only apply buttons/stick (ignore x/y/z/rotation).
+#define SM64_USB_APPLY_REMOTE_POS 1
+
 // Stack Size Defines
 #define IDLE_STACKSIZE 0x800
 #define STACKSIZE 0x2000

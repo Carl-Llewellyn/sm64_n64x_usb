@@ -33,6 +33,7 @@
 #include "sound_init.h"
 #include "rumble_init.h"
 #include "game/level_update.h"
+#include "usb_comm.h"
 
 u32 unused80339F10;
 u8 unused80339F1C[20];
@@ -1304,6 +1305,8 @@ void update_mario_button_inputs(struct MarioState *m) {
 void update_mario_joystick_inputs(struct MarioState *m) {
     struct Controller *controller = m->controller;
     f32 mag = ((controller->stickMag / 64.0f) * (controller->stickMag / 64.0f)) * 64.0f;
+    s16 camYaw = m->area->camera->yaw;
+    s32 playerIndex;
 
     if (m->squishTimer == 0) {
         m->intendedMag = mag / 2.0f;
@@ -1312,11 +1315,77 @@ void update_mario_joystick_inputs(struct MarioState *m) {
     }
 
     if (m->intendedMag > 0.0f) {
-        m->intendedYaw = atan2s(-controller->stickY, controller->stickX) + m->area->camera->yaw;
+        playerIndex = (s32)(m - gMarioStates);
+        if (playerIndex > 0) {
+            (void)usb_comm_get_remote_cam_yaw((u8)playerIndex, &camYaw);
+        }
+        m->intendedYaw = atan2s(-controller->stickY, controller->stickX) + camYaw;
         m->input |= INPUT_NONZERO_ANALOG;
     } else {
         m->intendedYaw = m->faceAngle[1];
     }
+}
+
+static void maybe_teleport_p2_to_p1(struct MarioState *m) {
+    if (MAX_PLAYERS < 2) {
+        return;
+    }
+
+    if (m != &gMarioStates[1]) {
+        return;
+    }
+
+    if (!(m->controller->buttonPressed & U_JPAD)) {
+        return;
+    }
+
+    if (gMarioStates[0].marioObj == NULL) {
+        return;
+    }
+
+    vec3f_copy(m->pos, gMarioStates[0].pos);
+    vec3s_copy(m->faceAngle, gMarioStates[0].faceAngle);
+    vec3f_set(m->vel, 0, 0, 0);
+    m->forwardVel = 0.0f;
+
+    m->marioObj->oPosX = m->pos[0];
+    m->marioObj->oPosY = m->pos[1];
+    m->marioObj->oPosZ = m->pos[2];
+
+    m->marioObj->oMoveAnglePitch = m->faceAngle[0];
+    m->marioObj->oMoveAngleYaw = m->faceAngle[1];
+    m->marioObj->oMoveAngleRoll = m->faceAngle[2];
+
+    vec3f_copy(m->marioObj->header.gfx.pos, m->pos);
+    vec3s_set(m->marioObj->header.gfx.angle, 0, m->faceAngle[1], 0);
+}
+
+static void maybe_teleport_p1_to_coords(struct MarioState *m) {
+    if (m != &gMarioStates[0]) {
+        return;
+    }
+
+    if (gCameraMovementFlags & CAM_MOVE_C_UP_MODE) {
+        return;
+    }
+
+    if (!(m->controller->buttonPressed & R_JPAD)) {
+        return;
+    }
+
+    m->pos[0] = 1448.48f;
+    m->pos[1] = 4293.00f;
+    m->pos[2] = -3663.17f;
+    vec3f_set(m->vel, 0, 0, 0);
+    m->forwardVel = 0.0f;
+
+    m->marioObj->oPosX = m->pos[0];
+    m->marioObj->oPosY = m->pos[1];
+    m->marioObj->oPosZ = m->pos[2];
+
+    vec3f_copy(m->marioObj->header.gfx.pos, m->pos);
+
+    gCameraMovementFlags &= ~CAM_MOVE_C_UP_MODE;
 }
 
 /**
@@ -1389,6 +1458,8 @@ void update_mario_inputs(struct MarioState *m) {
 
     update_mario_button_inputs(m);
     update_mario_joystick_inputs(m);
+    maybe_teleport_p2_to_p1(m);
+    maybe_teleport_p1_to_coords(m);
     update_mario_geometry_inputs(m);
 
     debug_print_speed_action_normal(m);

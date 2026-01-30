@@ -28,6 +28,10 @@ typedef struct {
     s32 x;
     s32 y;
     s32 z;
+    s16 pitch;
+    s16 yaw;
+    s16 roll;
+    s16 cam_yaw;
     u32 last_seen_frame;
 } Sm64UsbRemoteState;
 
@@ -43,6 +47,10 @@ static u32 sParseIndex = 0;
 #define SM64_USB_POS_MAX_ABS 30000.0f
 #endif
 
+#ifndef SM64_USB_ROT_SNAP_THRESHOLD
+#define SM64_USB_ROT_SNAP_THRESHOLD 0x200
+#endif
+
 static f32 sm64usb_s32_to_f32(s32 v) {
     union {
         s32 i;
@@ -50,6 +58,10 @@ static f32 sm64usb_s32_to_f32(s32 v) {
     } u;
     u.i = v;
     return u.f;
+}
+
+static s32 sm64usb_abs_s16(s16 v) {
+    return (v < 0) ? -(s32)v : (s32)v;
 }
 
 static int sm64usb_pos_valid(f32 x, f32 y, f32 z) {
@@ -89,6 +101,7 @@ static void usb_comm_apply_remote_position(u8 slot, const Sm64UsbRemoteState *st
     f32 dz = z - m->pos[2];
     f32 dist2 = dx * dx + dy * dy + dz * dz;
     f32 thresh = SM64_USB_POS_SNAP_THRESHOLD;
+    s32 rotThresh = SM64_USB_ROT_SNAP_THRESHOLD;
 
     if (obj == NULL) {
         return;
@@ -96,24 +109,65 @@ static void usb_comm_apply_remote_position(u8 slot, const Sm64UsbRemoteState *st
     if (!sm64usb_pos_valid(x, y, z)) {
         return;
     }
-    if (dist2 <= (thresh * thresh)) {
-        return;
+    if (dist2 > (thresh * thresh)) {
+        m->pos[0] = x;
+        m->pos[1] = y;
+        m->pos[2] = z;
+
+        obj->oPosX = x;
+        obj->oPosY = y;
+        obj->oPosZ = z;
+        obj->header.gfx.pos[0] = x;
+        obj->header.gfx.pos[1] = y;
+        obj->header.gfx.pos[2] = z;
     }
 
-    m->pos[0] = x;
-    m->pos[1] = y;
-    m->pos[2] = z;
+    if (sm64usb_abs_s16((s16)(state->pitch - m->faceAngle[0])) > rotThresh) {
+        m->faceAngle[0] = state->pitch;
+        obj->oMoveAnglePitch = state->pitch;
+        obj->header.gfx.angle[0] = state->pitch;
+    }
+    if (sm64usb_abs_s16((s16)(state->yaw - m->faceAngle[1])) > rotThresh) {
+        m->faceAngle[1] = state->yaw;
+        obj->oMoveAngleYaw = state->yaw;
+        obj->header.gfx.angle[1] = state->yaw;
+    }
+    if (sm64usb_abs_s16((s16)(state->roll - m->faceAngle[2])) > rotThresh) {
+        m->faceAngle[2] = state->roll;
+        obj->oMoveAngleRoll = state->roll;
+        obj->header.gfx.angle[2] = state->roll;
+    }
+}
 
-    obj->oPosX = x;
-    obj->oPosY = y;
-    obj->oPosZ = z;
-    obj->header.gfx.pos[0] = x;
-    obj->header.gfx.pos[1] = y;
-    obj->header.gfx.pos[2] = z;
+int usb_comm_get_remote_cam_yaw(u8 slot, s16 *outYaw) {
+    u32 now = gGlobalTimer;
+    u8 player_id;
+
+    if (outYaw == NULL) {
+        return 0;
+    }
+    if (slot == 0) {
+        return 0;
+    }
+
+    player_id = (u8)(slot - 1);
+    if (player_id >= SM64_USB_MAX_PLAYERS) {
+        return 0;
+    }
+    if (!sRemoteStates[player_id].valid) {
+        return 0;
+    }
+    if ((u32)(now - sRemoteStates[player_id].last_seen_frame) > (u32)SM64_USB_STALE_FRAMES) {
+        return 0;
+    }
+
+    *outYaw = sRemoteStates[player_id].cam_yaw;
+    return 1;
 }
 
 /* Store already-decoded fields (host-endian), so the rest of the game never worries about byte order. */
-static void usb_comm_store_decoded(u8 player_id, u16 buttons, s8 stick_x, s8 stick_y, s32 x, s32 y, s32 z) {
+static void usb_comm_store_decoded(u8 player_id, u16 buttons, s8 stick_x, s8 stick_y, s32 x, s32 y, s32 z,
+                                   s16 pitch, s16 yaw, s16 roll, s16 cam_yaw) {
     if (player_id >= SM64_USB_MAX_PLAYERS) {
         return;
     }
@@ -124,6 +178,10 @@ static void usb_comm_store_decoded(u8 player_id, u16 buttons, s8 stick_x, s8 sti
     sRemoteStates[player_id].x = x;
     sRemoteStates[player_id].y = y;
     sRemoteStates[player_id].z = z;
+    sRemoteStates[player_id].pitch = pitch;
+    sRemoteStates[player_id].yaw = yaw;
+    sRemoteStates[player_id].roll = roll;
+    sRemoteStates[player_id].cam_yaw = cam_yaw;
     sRemoteStates[player_id].last_seen_frame = gGlobalTimer;
 }
 
@@ -158,6 +216,10 @@ void usb_comm_consume_bytes(const u8 *data, u32 len) {
                 u8  pid;
                 s32 x, y, z;
                 u16 buttons;
+                s16 pitch;
+                s16 yaw;
+                s16 roll;
+                s16 cam_yaw;
                 s8  stick_x, stick_y;
 
                 sm64usb_memcpy(pkt.b, sParseBuf, (u32)SM64_USB_PACKET_SIZE);
@@ -166,11 +228,15 @@ void usb_comm_consume_bytes(const u8 *data, u32 len) {
                 x       = sm64usb_read_be32(&pkt.b[SM64_USB_O_X]);
                 y       = sm64usb_read_be32(&pkt.b[SM64_USB_O_Y]);
                 z       = sm64usb_read_be32(&pkt.b[SM64_USB_O_Z]);
+                pitch   = (s16)sm64usb_read_be16(&pkt.b[SM64_USB_O_PITCH]);
+                yaw     = (s16)sm64usb_read_be16(&pkt.b[SM64_USB_O_YAW]);
+                roll    = (s16)sm64usb_read_be16(&pkt.b[SM64_USB_O_ROLL]);
+                cam_yaw = (s16)sm64usb_read_be16(&pkt.b[SM64_USB_O_CAM_YAW]);
                 buttons = sm64usb_read_be16(&pkt.b[SM64_USB_O_BUTTONS]);
                 stick_x = (s8)pkt.b[SM64_USB_O_STICK_X];
                 stick_y = (s8)pkt.b[SM64_USB_O_STICK_Y];
 
-                usb_comm_store_decoded(pid, buttons, stick_x, stick_y, x, y, z);
+                usb_comm_store_decoded(pid, buttons, stick_x, stick_y, x, y, z, pitch, yaw, roll, cam_yaw);
             }
 
             sParseIndex = 0;
@@ -200,7 +266,9 @@ void usb_comm_apply_remote_inputs(void) {
                                        sRemoteStates[player_id].buttons,
                                        sRemoteStates[player_id].stick_x,
                                        sRemoteStates[player_id].stick_y);
+#if SM64_USB_APPLY_REMOTE_POS
             usb_comm_apply_remote_position(slot, &sRemoteStates[player_id]);
+#endif
         }
     }
 

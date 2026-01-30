@@ -3,26 +3,31 @@
 
 #include <PR/ultratypes.h>
 
-#define SM64_USB_SYNC0        0x53 /* 'S' */
-#define SM64_USB_SYNC1        0x4D /* 'M' */
+#include "config.h"
+
+#define SM64_USB_SYNC0        0x53 // 'S'
+#define SM64_USB_SYNC1        0x4D // 'M'
 #define SM64_USB_VERSION      1
-#define SM64_USB_MAX_PLAYERS  4
+#define SM64_USB_MAX_PLAYERS  MAX_PLAYERS
 
-/* wire size is fixed and MUST NOT depend on compiler packing/alignment. */
-#define SM64_USB_PACKET_SIZE  22
+#define SM64_USB_PACKET_SIZE  30
 
-/* byte offsets in the wire packet (big-endian for multi-byte fields) */
-#define SM64_USB_O_SYNC0       0
-#define SM64_USB_O_SYNC1       1
-#define SM64_USB_O_VERSION     2
-#define SM64_USB_O_PLAYER_ID   3
-#define SM64_USB_O_X           4   /* 4 bytes (BE) */
-#define SM64_USB_O_Y           8   /* 4 bytes (BE) */
-#define SM64_USB_O_Z           12  /* 4 bytes (BE) */
-#define SM64_USB_O_BUTTONS     16  /* 2 bytes (BE) */
-#define SM64_USB_O_STICK_X     18  /* 1 byte (s8) */
-#define SM64_USB_O_STICK_Y     19  /* 1 byte (s8) */
-#define SM64_USB_O_RESERVED    20  /* 2 bytes (20..21) */
+// byte offsets in the wire packet (big-endian for multi-byte fields)
+#define SM64_USB_O_SYNC0       0   // S
+#define SM64_USB_O_SYNC1       1   // M
+#define SM64_USB_O_VERSION     2   // version is put here for sanity
+#define SM64_USB_O_PLAYER_ID   3   // P1, P2, P3, etc.
+#define SM64_USB_O_X           4   // 4 bytes (BE)
+#define SM64_USB_O_Y           8   // 4 bytes (BE)
+#define SM64_USB_O_Z           12  // 4 bytes (BE)
+#define SM64_USB_O_PITCH       16  // 2 bytes (BE, s16)
+#define SM64_USB_O_YAW         18  // 2 bytes (BE, s16)
+#define SM64_USB_O_ROLL        20  // 2 bytes (BE, s16)
+#define SM64_USB_O_CAM_YAW     22  // 2 bytes (BE, s16)
+#define SM64_USB_O_BUTTONS     24  // 2 bytes (BE)
+#define SM64_USB_O_STICK_X     26  // 1 byte (s8)
+#define SM64_USB_O_STICK_Y     27  // 1 byte (s8)
+#define SM64_USB_O_RESERVED    28  // 2 bytes (28..29)
 
 /* ---- Compatibility helpers for IDO (C89-ish) ---- */
 #if defined(__STDC_VERSION__) && (__STDC_VERSION__ >= 201112L)
@@ -45,7 +50,7 @@ typedef struct {
 } Sm64UsbPacket;
 
 SM64USB_STATIC_ASSERT(sizeof(Sm64UsbPacket) == SM64_USB_PACKET_SIZE,
-                      "Sm64UsbPacket must be 22 bytes");
+                      "Sm64UsbPacket must be 30 bytes");
 
 SM64USB_INLINE u16 sm64usb_read_be16(const u8 *p) {
     return (u16)(((u16)p[0] << 8) | (u16)p[1]);
