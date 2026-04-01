@@ -27,7 +27,8 @@
 #define SM64_USB_O_BUTTONS     24  // 2 bytes (BE)
 #define SM64_USB_O_STICK_X     26  // 1 byte (s8)
 #define SM64_USB_O_STICK_Y     27  // 1 byte (s8)
-#define SM64_USB_O_RESERVED    28  // 2 bytes (28..29)
+#define SM64_USB_O_LEVEL       28  // 1 byte (u8)
+#define SM64_USB_O_RESERVED    29  // 1 byte (29)
 
 /* ---- Compatibility helpers for IDO (C89-ish) ---- */
 #if defined(__STDC_VERSION__) && (__STDC_VERSION__ >= 201112L)

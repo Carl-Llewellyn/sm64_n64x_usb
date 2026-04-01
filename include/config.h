@@ -39,7 +39,7 @@
 #define SCREEN_HEIGHT 240
 
 // Player count for local Mario instances.
-#define MAX_PLAYERS 3
+#define MAX_PLAYERS 2
 
 // If false, USB packets only apply buttons/stick (ignore x/y/z/rotation).
 #define SM64_USB_APPLY_REMOTE_POS 1

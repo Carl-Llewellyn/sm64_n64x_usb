@@ -588,6 +588,7 @@
 
  /* King Bob-omb */
 #define /*0x088*/ oKingBobombUnk88  OBJECT_FIELD_S32(0x00)
+#define /*0x0F4*/ oKingBobombHolderIndex OBJECT_FIELD_S32(0x1B)
 #define /*0x0F8*/ oKingBobombUnkF8  OBJECT_FIELD_S32(0x1C)
 #define /*0x0FC*/ oKingBobombUnkFC  OBJECT_FIELD_S32(0x1D)
 #define /*0x100*/ oKingBobombUnk100 OBJECT_FIELD_S32(0x1E)
