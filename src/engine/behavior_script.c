@@ -30,6 +30,29 @@
 
 static u16 gRandomSeed16;
 
+static struct Object *obj_get_nearest_mario(struct Object *obj) {
+    struct Object *best = gMarioObject;
+    f32 bestDist = 1e30f;
+    s32 i;
+
+    for (i = 0; i < MAX_PLAYERS; i++) {
+        struct Object *marioObj = gMarioObjects[i];
+        f32 dist;
+
+        if (marioObj == NULL) {
+            continue;
+        }
+
+        dist = dist_between_objects(obj, marioObj);
+        if (dist < bestDist) {
+            bestDist = dist;
+            best = marioObj;
+        }
+    }
+
+    return best;
+}
+
 // Unused function that directly jumps to a behavior command and resets the object's stack index.
 UNUSED static void goto_behavior_unused(const BehaviorScript *bhvAddr) {
     gCurBhvCommand = segmented_to_virtual(bhvAddr);
@@ -908,12 +931,15 @@ void cur_obj_update(void) {
 
     s16 objFlags = gCurrentObject->oFlags;
     f32 distanceFromMario;
+    struct Object *targetMario;
     BhvCommandProc bhvCmdProc;
     s32 bhvProcResult;
 
+    targetMario = obj_get_nearest_mario(gCurrentObject);
+
     // Calculate the distance from the object to Mario.
     if (objFlags & OBJ_FLAG_COMPUTE_DIST_TO_MARIO) {
-        gCurrentObject->oDistanceToMario = dist_between_objects(gCurrentObject, gMarioObject);
+        gCurrentObject->oDistanceToMario = dist_between_objects(gCurrentObject, targetMario);
         distanceFromMario = gCurrentObject->oDistanceToMario;
     } else {
         distanceFromMario = 0.0f;
@@ -921,7 +947,7 @@ void cur_obj_update(void) {
 
     // Calculate the angle from the object to Mario.
     if (objFlags & OBJ_FLAG_COMPUTE_ANGLE_TO_MARIO) {
-        gCurrentObject->oAngleToMario = obj_angle_to_object(gCurrentObject, gMarioObject);
+        gCurrentObject->oAngleToMario = obj_angle_to_object(gCurrentObject, targetMario);
     }
 
     // If the object's action has changed, reset the action timer.

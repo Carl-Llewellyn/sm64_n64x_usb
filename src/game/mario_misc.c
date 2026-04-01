@@ -547,7 +547,21 @@ Gfx *geo_mario_rotate_wing_cap_wings(s32 callContext, struct GraphNode *node, UN
 Gfx *geo_switch_mario_hand_grab_pos(s32 callContext, struct GraphNode *b, Mat4 *mtx) {
     struct GraphNodeHeldObject *asHeldObj = (struct GraphNodeHeldObject *) b;
     Mat4 *curTransform = mtx;
-    struct MarioState *marioState = &gMarioStates[asHeldObj->playerIndex];
+    struct MarioState *marioState = NULL;
+    s32 i;
+
+    if (gCurGraphNodeObject != NULL) {
+        for (i = 0; i < MAX_PLAYERS; i++) {
+            if (gMarioObjects[i] == (struct Object *) gCurGraphNodeObject) {
+                marioState = &gMarioStates[i];
+                break;
+            }
+        }
+    }
+
+    if (marioState == NULL) {
+        marioState = &gMarioStates[asHeldObj->playerIndex];
+    }
 
     if (callContext == GEO_CONTEXT_RENDER) {
         asHeldObj->objNode = NULL;

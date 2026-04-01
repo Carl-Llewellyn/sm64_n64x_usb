@@ -17,6 +17,18 @@ static char gBuf[32];
 
 #define SM64_USB_DEBUG_PRINT 1
 
+void __osPiGetAccess(void);
+void __osPiRelAccess(void);
+
+static u32 float_to_u32(f32 f) {
+    union {
+        f32 f;
+        u32 u;
+    } u;
+    u.f = f;
+    return u.u;
+}
+
 static void usb_print_incoming(const u8 *data) {
     int i = 0;
     int y = 12;
@@ -24,28 +36,28 @@ static void usb_print_incoming(const u8 *data) {
     s8 stick_x = (s8)data[SM64_USB_O_STICK_X];
     s8 stick_y = (s8)data[SM64_USB_O_STICK_Y];
 
-    sprintf(gBuf, "rx %02X %02X %02X %02X",
+    /* sprintf(gBuf, "rx %02X %02X %02X %02X",
             data[0], data[1], data[2], data[3]);
     print_text(0, y, gBuf);
-    y += 20;
+    y += 20; */
 
     for (i = 4; i < 20; i += 4) {
-        sprintf(gBuf, "%02d: %02X %02X %02X %02X",
+        /* sprintf(gBuf, "%02d: %02X %02X %02X %02X",
                 i, data[i + 0], data[i + 1], data[i + 2], data[i + 3]);
         print_text(0, y, gBuf);
-        y += 20;
+        y += 20; */
     }
 
-    sprintf(gBuf, "20: %02X %02X",
+    /* sprintf(gBuf, "20: %02X %02X",
             data[20], data[21]);
     print_text(0, y, gBuf);
-    y += 20;
+    y += 20; */
 
-    sprintf(gBuf, "pid=%d btn=%04X sx=%d sy=%d",
+    /* sprintf(gBuf, "pid=%d btn=%04X sx=%d sy=%d",
             (int)data[SM64_USB_O_PLAYER_ID],
             (unsigned int)buttons,
             (int)stick_x, (int)stick_y);
-    print_text(0, y, gBuf);
+    print_text(0, y, gBuf); */
 }
 
 //split whatever comes in to write 32bit
@@ -62,7 +74,7 @@ void send_32_bit(int len, u8 *data){
     //32/8 = 4 - so we can send 4 u8s at a time
     for(i = 0; i < len; i+=4){
         word = 0;
-        n = (len - i < 4) ? (len - i) : 4; // last one is 2 bytes for len=22
+        n = (len - i < 4) ? (len - i) : 4; // last one is 2 bytes for len=30
         memcpy(&word, data+i, n);//cp 4 u8s into the word - use n to only cp 2 at end
         WAIT_ON_IO_BUSY(IO_READ(PI_STATUS_REG));
         IO_WRITE((u32)curr_write_add, word);//write word
@@ -75,24 +87,29 @@ void usb_send_state(struct Controller *c, struct MarioState *mstate) {
     u8 raw[SM64_USB_PACKET_SIZE] = {0};
     u16 btn = (u16)c->buttonDown;
 
-    raw[0] = SM64_USB_SYNC0;
-    raw[1] = SM64_USB_SYNC1;
-    raw[2] = SM64_USB_VERSION;
-    raw[3] = 0xFF;
+    raw[SM64_USB_O_SYNC0] = SM64_USB_SYNC0;
+    raw[SM64_USB_O_SYNC1] = SM64_USB_SYNC1;
+    raw[SM64_USB_O_VERSION] = SM64_USB_VERSION;
+    raw[SM64_USB_O_PLAYER_ID] = 0xFF;
 
-    memcpy(raw+4, &mstate->pos[0], 4);//not being used atm but meant for sync
-    memcpy(raw+8, &mstate->pos[1], 4);
-    memcpy(raw+12, &mstate->pos[2], 4);
+    sm64usb_write_be32(&raw[SM64_USB_O_X], float_to_u32(mstate->pos[0]));
+    sm64usb_write_be32(&raw[SM64_USB_O_Y], float_to_u32(mstate->pos[1]));
+    sm64usb_write_be32(&raw[SM64_USB_O_Z], float_to_u32(mstate->pos[2]));
 
-    memcpy(raw + 16, &btn, 2);//2 bytes
-    raw[18] = (u8)c->rawStickX;
-    raw[19] = (u8)c->rawStickY;
+    sm64usb_write_be16(&raw[SM64_USB_O_PITCH], (u16)mstate->faceAngle[0]);
+    sm64usb_write_be16(&raw[SM64_USB_O_YAW], (u16)mstate->faceAngle[1]);
+    sm64usb_write_be16(&raw[SM64_USB_O_ROLL], (u16)mstate->faceAngle[2]);
+    sm64usb_write_be16(&raw[SM64_USB_O_CAM_YAW], (u16)mstate->area->camera->yaw);
+    sm64usb_write_be16(&raw[SM64_USB_O_BUTTONS], btn);
+    raw[SM64_USB_O_STICK_X] = (u8)c->rawStickX;
+    raw[SM64_USB_O_STICK_Y] = (u8)c->rawStickY;
+    raw[SM64_USB_O_LEVEL] = (u8)gCurrLevelNum;
 
     send_32_bit(SM64_USB_PACKET_SIZE, raw);
 }
 
 void read_incoming(u8 *data){
-    const int len = 22;
+    const int len = SM64_USB_PACKET_SIZE;
     u32 *curr_read_add = (u32 *)CART_SRAM_START;
     int i = 0;
     u32 word = 0;

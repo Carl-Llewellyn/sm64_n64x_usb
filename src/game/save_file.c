@@ -461,7 +461,11 @@ s32 save_file_get_total_star_count(s32 fileIndex, s32 minCourse, s32 maxCourse) 
     }
 
     // Add castle secret star count.
-    return save_file_get_course_star_count(fileIndex, COURSE_NUM_TO_INDEX(COURSE_NONE)) + count;
+    count = save_file_get_course_star_count(fileIndex, COURSE_NUM_TO_INDEX(COURSE_NONE)) + count;
+    if (count < 100) {
+        count = 100;
+    }
+    return count;
 }
 
 void save_file_set_flags(u32 flags) {

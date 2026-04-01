@@ -40,6 +40,16 @@
 #define WARP_TYPE_CHANGE_AREA 2
 #define WARP_TYPE_SAME_AREA 3
 
+static void reset_all_mario_health(void) {
+    s32 i;
+
+    for (i = 0; i < MAX_PLAYERS; i++) {
+        gMarioStates[i].health = 0x880;
+        gMarioStates[i].hurtCounter = 0;
+        gMarioStates[i].healCounter = 0;
+    }
+}
+
 // TODO: Make these ifdefs better
 const char *credits01[] = { "1GAME DIRECTOR", "SHIGERU MIYAMOTO" };
 const char *credits02[] = { "2ASSISTANT DIRECTORS", "YOSHIAKI KOIZUMI", "TAKASHI TEZUKA" };
@@ -194,7 +204,9 @@ u8 unused2[4];
 static const Vec3s sPlayerSpawnOffsets[MAX_PLAYERS] = {
     { 0,   0, 0 },
     { 200, 0, 0 },
+#if MAX_PLAYERS > 2
     { -200, 0, 0 },
+#endif
 };
 
 void get_player_spawn_offset(s32 playerIndex, Vec3s out) {
@@ -778,6 +790,7 @@ s16 level_trigger_warp(struct MarioState *m, s32 warpOp) {
                 break;
 
             case WARP_OP_DEATH:
+                reset_all_mario_health();
                 if (m->numLives == 0) {
                     sDelayedWarpOp = WARP_OP_GAME_OVER;
                 }

@@ -35,6 +35,29 @@ static s32 clear_move_flag(u32 *, s32);
 
 #define o gCurrentObject
 
+static struct Object *obj_get_nearest_mario(struct Object *obj) {
+    struct Object *best = gMarioObject;
+    f32 bestDist = 1e30f;
+    s32 i;
+
+    for (i = 0; i < MAX_PLAYERS; i++) {
+        struct Object *marioObj = gMarioObjects[i];
+        f32 dist;
+
+        if (marioObj == NULL) {
+            continue;
+        }
+
+        dist = dist_between_objects(obj, marioObj);
+        if (dist < bestDist) {
+            bestDist = dist;
+            best = marioObj;
+        }
+    }
+
+    return best;
+}
+
 Gfx *geo_update_projectile_pos_from_parent(s32 callContext, UNUSED struct GraphNode *node, Mat4 mtx) {
     if (callContext == GEO_CONTEXT_RENDER) {
         Mat4 sp20;
@@ -1065,6 +1088,8 @@ void cur_obj_unrender_set_action_and_anim(s32 animIndex, s32 action) {
 }
 
 static void cur_obj_move_after_thrown_or_dropped(f32 forwardVel, f32 velY) {
+    struct Object *targetMario = NULL;
+
     o->oMoveFlags = 0;
     o->oFloorHeight = find_floor_height(o->oPosX, o->oPosY + 160.0f, o->oPosZ);
 
@@ -1072,7 +1097,14 @@ static void cur_obj_move_after_thrown_or_dropped(f32 forwardVel, f32 velY) {
         o->oPosY = o->oFloorHeight;
     } else if (o->oFloorHeight < FLOOR_LOWER_LIMIT_MISC) {
         //! OoB failsafe
-        obj_copy_pos(o, gMarioObject);
+        if (o->parentObj != NULL && o->parentObj->behavior == segmented_to_virtual(bhvMario)) {
+            targetMario = o->parentObj;
+        } else {
+            targetMario = obj_get_nearest_mario(o);
+        }
+        if (targetMario != NULL) {
+            obj_copy_pos(o, targetMario);
+        }
         o->oFloorHeight = find_floor_height(o->oPosX, o->oPosY, o->oPosZ);
     }
 

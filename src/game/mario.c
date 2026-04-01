@@ -1536,6 +1536,13 @@ void set_submerged_cam_preset_and_spawn_bubbles(struct MarioState *m) {
 void update_mario_health(struct MarioState *m) {
     s32 terrainIsSnow;
 
+    if (m == &gMarioStates[1]) {
+        m->health = 0x880;
+        m->hurtCounter = 0;
+        m->healCounter = 0;
+        return;
+    }
+
     if (m->health >= 0x100) {
         // When already healing or hurting Mario, Mario's HP is not changed any more here.
         if (((u32) m->healCounter | (u32) m->hurtCounter) == 0) {

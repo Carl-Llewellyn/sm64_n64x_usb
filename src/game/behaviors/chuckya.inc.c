@@ -14,26 +14,54 @@ struct UnusedChuckyaData sUnusedChuckyaData[] = {
     { 8, 10.f, 1.f },
 };
 
+static void get_anchor_mario(struct Object **marioObj, struct MarioState **marioState) {
+    s32 i;
+
+    *marioObj = gMarioObject;
+    *marioState = &gMarioStates[0];
+
+    if (o->parentObj != NULL && o->parentObj->behavior == segmented_to_virtual(bhvKingBobomb)) {
+        s32 idx = o->parentObj->oKingBobombHolderIndex;
+        if (idx >= 0 && idx < MAX_PLAYERS && gMarioObjects[idx] != NULL) {
+            *marioObj = gMarioObjects[idx];
+            *marioState = &gMarioStates[idx];
+            return;
+        }
+    }
+
+    for (i = 0; i < MAX_PLAYERS; i++) {
+        if (gMarioObjects[i] == *marioObj) {
+            *marioState = &gMarioStates[i];
+            break;
+        }
+    }
+}
+
 void common_anchor_mario_behavior(f32 sp28, f32 sp2C, s32 sp30) {
+    struct Object *marioObj;
+    struct MarioState *marioState;
+
+    get_anchor_mario(&marioObj, &marioState);
+
     switch (o->parentObj->oChuckyaUnk88) {
         case 0:
             break;
 
         case 1:
-            obj_set_gfx_pos_at_obj_pos(gMarioObject, o);
+            obj_set_gfx_pos_at_obj_pos(marioObj, o);
             break;
 
         case 2:
-            gMarioObject->oInteractStatus |= (INT_STATUS_MARIO_UNK2 + sp30);
-            gMarioStates[0].forwardVel = sp28;
-            gMarioStates[0].vel[1] = sp2C;
+            marioObj->oInteractStatus |= (INT_STATUS_MARIO_UNK2 + sp30);
+            marioState->forwardVel = sp28;
+            marioState->vel[1] = sp2C;
             o->parentObj->oChuckyaUnk88 = 0;
             break;
 
         case 3:
-            gMarioObject->oInteractStatus |= (INT_STATUS_MARIO_UNK2 | INT_STATUS_MARIO_UNK6);
-            gMarioStates[0].forwardVel = 10.0f;
-            gMarioStates[0].vel[1] = 10.0f;
+            marioObj->oInteractStatus |= (INT_STATUS_MARIO_UNK2 | INT_STATUS_MARIO_UNK6);
+            marioState->forwardVel = 10.0f;
+            marioState->vel[1] = 10.0f;
             o->parentObj->oChuckyaUnk88 = 0;
             break;
     }

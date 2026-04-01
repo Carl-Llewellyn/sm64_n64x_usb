@@ -27,8 +27,7 @@ void crash_screen_init(void);
 #include "rumble_init.h"
 
 
-// First 3 controller slots
-struct Controller gControllers[3];
+struct Controller gControllers[MAX_PLAYERS];
 
 // Gfx handlers
 struct SPTask *gGfxSPTask;
@@ -36,9 +35,9 @@ Gfx *gDisplayListHead;
 u8 *gGfxPoolEnd;
 struct GfxPool *gGfxPool;
 
-// OS Controllers
-OSContStatus gControllerStatuses[4];
-OSContPad gControllerPads[4];
+// OS Controllers (libultra always probes MAXCONTROLLERS ports)
+OSContStatus gControllerStatuses[MAXCONTROLLERS];
+OSContPad gControllerPads[MAXCONTROLLERS];
 u8 gControllerBits;
 s8 gEepromProbe; // Save Data Probe
 
@@ -84,8 +83,17 @@ void (*gGoddardVblankCallback)(void) = NULL;
 
 // Defined controller slots
 struct Controller *gPlayer1Controller = &gControllers[0];
+#if MAX_PLAYERS > 1
 struct Controller *gPlayer2Controller = &gControllers[1];
-struct Controller *gPlayer3Controller = &gControllers[2]; // Probably debug only, see note below
+#else
+struct Controller *gPlayer2Controller = &gControllers[0];
+#endif
+// Probably debug only, see note below
+#if MAX_PLAYERS > 2
+struct Controller *gPlayer3Controller = &gControllers[2];
+#else
+struct Controller *gPlayer3Controller = &gControllers[0];
+#endif
 
 // Title Screen Demo Handler
 struct DemoInput *gCurrDemoInput = NULL;
@@ -604,12 +612,9 @@ void init_controllers(void) {
     // Save Pak detection?
     gEepromProbe = osEepromProbe(&gSIEventMesgQueue);
 
-    // Loop over the 4 ports and link the controller structs to the appropriate
-    // status and pad. Interestingly, although there are pointers to 3 controllers,
-    // only 2 are connected here. The third seems to have been reserved for debug
-    // purposes and was never connected in the retail ROM, thus gPlayer3Controller
-    // cannot be used, despite being referenced in various code.
-    for (port = 0; port < 3; port++) {
+    // Loop over the controller ports and link the controller structs to the appropriate
+    // status and pad.
+    for (port = 0; port < MAX_PLAYERS; port++) {
         // For multiplayer, map controller N to port N.
         gControllers[port].statusData = &gControllerStatuses[port];
 #if ENABLE_RUMBLE

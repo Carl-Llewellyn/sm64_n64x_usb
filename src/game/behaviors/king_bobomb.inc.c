@@ -15,6 +15,53 @@ Gfx *geo_update_held_mario_pos(s32 run, UNUSED struct GraphNode *node, Mat4 mtx)
     return NULL;
 }
 
+static s32 mario_obj_to_index(struct Object *marioObj) {
+    s32 i;
+
+    for (i = 0; i < MAX_PLAYERS; i++) {
+        if (gMarioObjects[i] == marioObj) {
+            return i;
+        }
+    }
+
+    return -1;
+}
+
+static struct Object *king_bobomb_get_target_mario(void) {
+    struct Object *best = gMarioObject;
+    f32 bestDist = 1e30f;
+    s32 i;
+
+    if (o->oKingBobombHolderIndex >= 0 && o->oKingBobombHolderIndex < MAX_PLAYERS) {
+        struct Object *holder = gMarioObjects[o->oKingBobombHolderIndex];
+        if (holder != NULL) {
+            return holder;
+        }
+    }
+
+    if (o->parentObj != NULL && o->parentObj->behavior == segmented_to_virtual(bhvMario)) {
+        o->oKingBobombHolderIndex = mario_obj_to_index(o->parentObj);
+        return o->parentObj;
+    }
+
+    for (i = 0; i < MAX_PLAYERS; i++) {
+        struct Object *marioObj = gMarioObjects[i];
+        f32 dist;
+
+        if (marioObj == NULL) {
+            continue;
+        }
+
+        dist = dist_between_objects(o, marioObj);
+        if (dist < bestDist) {
+            bestDist = dist;
+            best = marioObj;
+        }
+    }
+
+    return best;
+}
+
 void bhv_bobomb_anchor_mario_loop(void) {
     common_anchor_mario_behavior(50.0f, 50.0f, INT_STATUS_MARIO_UNK6);
 }
@@ -31,6 +78,7 @@ void king_bobomb_act_0(void) {
         cur_obj_init_animation_with_sound(5);
         cur_obj_set_pos_to_home();
         o->oHealth = 3;
+        o->oKingBobombHolderIndex = -1;
 
         if (cur_obj_can_mario_activate_textbox_2(500.0f, 100.0f)) {
             o->oSubAction++;
@@ -44,7 +92,9 @@ void king_bobomb_act_0(void) {
 }
 
 s32 mario_is_far_below_object(f32 arg0) {
-    if (arg0 < o->oPosY - gMarioObject->oPosY) {
+    struct Object *targetMario = king_bobomb_get_target_mario();
+
+    if (targetMario != NULL && arg0 < o->oPosY - targetMario->oPosY) {
         return TRUE;
     } else {
         return FALSE;
@@ -229,6 +279,14 @@ void king_bobomb_act_8(void) {
 }
 
 void king_bobomb_act_4(void) { // bobomb been thrown
+    if (o->oTimer > 300 || o->oPosY < o->oHomeY - 2000.0f) {
+        o->oAction = 5;
+        o->oSubAction = 0;
+        o->oForwardVel = 0.0f;
+        o->oVelY = 0.0f;
+        return;
+    }
+
     if (o->oPosY - o->oHomeY > -100.0f) { // not thrown off hill
         if (o->oMoveFlags & OBJ_MOVE_LANDED) {
             o->oHealth--;
@@ -385,6 +443,9 @@ void bhv_king_bobomb_loop(void) {
             king_bobomb_move();
             break;
         case HELD_HELD:
+            if (o->parentObj != NULL && o->parentObj->behavior == segmented_to_virtual(bhvMario)) {
+                o->oKingBobombHolderIndex = mario_obj_to_index(o->parentObj);
+            }
             cur_obj_unrender_set_action_and_anim(6, 1);
             break;
         case HELD_THROWN:

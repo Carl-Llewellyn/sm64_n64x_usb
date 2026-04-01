@@ -8,6 +8,7 @@
 #include "object_fields.h"
 #include "object_list_processor.h"
 #include "macros.h"
+#include "engine/graph_node.h"
 
 #ifdef TARGET_PS2
 #include <kernel.h>
@@ -32,6 +33,7 @@ typedef struct {
     s16 yaw;
     s16 roll;
     s16 cam_yaw;
+    u8  level;
     u32 last_seen_frame;
 } Sm64UsbRemoteState;
 
@@ -103,6 +105,9 @@ static void usb_comm_apply_remote_position(u8 slot, const Sm64UsbRemoteState *st
     f32 thresh = SM64_USB_POS_SNAP_THRESHOLD;
     s32 rotThresh = SM64_USB_ROT_SNAP_THRESHOLD;
 
+    if (state->level != (u8)gCurrLevelNum) {
+        return;
+    }
     if (obj == NULL) {
         return;
     }
@@ -167,7 +172,7 @@ int usb_comm_get_remote_cam_yaw(u8 slot, s16 *outYaw) {
 
 /* Store already-decoded fields (host-endian), so the rest of the game never worries about byte order. */
 static void usb_comm_store_decoded(u8 player_id, u16 buttons, s8 stick_x, s8 stick_y, s32 x, s32 y, s32 z,
-                                   s16 pitch, s16 yaw, s16 roll, s16 cam_yaw) {
+                                   s16 pitch, s16 yaw, s16 roll, s16 cam_yaw, u8 level) {
     if (player_id >= SM64_USB_MAX_PLAYERS) {
         return;
     }
@@ -182,6 +187,7 @@ static void usb_comm_store_decoded(u8 player_id, u16 buttons, s8 stick_x, s8 sti
     sRemoteStates[player_id].yaw = yaw;
     sRemoteStates[player_id].roll = roll;
     sRemoteStates[player_id].cam_yaw = cam_yaw;
+    sRemoteStates[player_id].level = level;
     sRemoteStates[player_id].last_seen_frame = gGlobalTimer;
 }
 
@@ -221,6 +227,7 @@ void usb_comm_consume_bytes(const u8 *data, u32 len) {
                 s16 roll;
                 s16 cam_yaw;
                 s8  stick_x, stick_y;
+                u8  level;
 
                 sm64usb_memcpy(pkt.b, sParseBuf, (u32)SM64_USB_PACKET_SIZE);
 
@@ -235,8 +242,9 @@ void usb_comm_consume_bytes(const u8 *data, u32 len) {
                 buttons = sm64usb_read_be16(&pkt.b[SM64_USB_O_BUTTONS]);
                 stick_x = (s8)pkt.b[SM64_USB_O_STICK_X];
                 stick_y = (s8)pkt.b[SM64_USB_O_STICK_Y];
+                level   = pkt.b[SM64_USB_O_LEVEL];
 
-                usb_comm_store_decoded(pid, buttons, stick_x, stick_y, x, y, z, pitch, yaw, roll, cam_yaw);
+                usb_comm_store_decoded(pid, buttons, stick_x, stick_y, x, y, z, pitch, yaw, roll, cam_yaw, level);
             }
 
             sParseIndex = 0;
@@ -250,6 +258,7 @@ void usb_comm_apply_remote_inputs(void) {
 
     for (player_id = 0; player_id < SM64_USB_MAX_PLAYERS; player_id++) {
         u8 slot = (u8)(player_id + 1);
+        struct Object *obj = NULL;
 
         if (!sRemoteStates[player_id].valid) {
             continue;
@@ -259,6 +268,16 @@ void usb_comm_apply_remote_inputs(void) {
         if ((u32)(now - sRemoteStates[player_id].last_seen_frame) > (u32)SM64_USB_STALE_FRAMES) {
             sRemoteStates[player_id].valid = 0;
             continue;
+        }
+        obj = gMarioObjects[slot];
+        if (sRemoteStates[player_id].level != (u8)gCurrLevelNum) {
+            if (obj != NULL && obj != gMarioObjects[0]) {
+                obj->header.gfx.node.flags |= GRAPH_RENDER_INVISIBLE;
+            }
+            continue;
+        }
+        if (obj != NULL && obj != gMarioObjects[0]) {
+            obj->header.gfx.node.flags &= ~GRAPH_RENDER_INVISIBLE;
         }
 
         if (slot < ARRAY_COUNT(gControllers)) {

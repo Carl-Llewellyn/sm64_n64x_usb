@@ -23,9 +23,9 @@ struct DemoInput {
     u8 buttonMask;
 };
 
-extern struct Controller gControllers[3];
-extern OSContStatus gControllerStatuses[4];
-extern OSContPad gControllerPads[4];
+extern struct Controller gControllers[MAX_PLAYERS];
+extern OSContStatus gControllerStatuses[MAXCONTROLLERS];
+extern OSContPad gControllerPads[MAXCONTROLLERS];
 extern OSMesgQueue gGameVblankQueue;
 extern OSMesgQueue gGfxVblankQueue;
 extern OSMesg gGameMesgBuf[1];
