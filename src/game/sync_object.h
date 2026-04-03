@@ -28,6 +28,18 @@ struct SyncObject {
     u8 dirty;
 };
 
+struct SyncObjectDebugState {
+    u32 remoteSpawnCount;
+    u32 remoteApplyCount;
+    u32 remoteDeleteCount;
+    u32 remoteActiveCount;
+    u32 lastRemoteSyncId;
+    u32 lastRemoteFrame;
+    s32 lastRemotePosX;
+    s32 lastRemotePosY;
+    s32 lastRemotePosZ;
+};
+
 void sync_object_system_init(void);
 void sync_object_system_reset(void);
 void sync_object_system_update(void);
@@ -38,6 +50,8 @@ void sync_object_forget(struct Object *o);
 void sync_object_on_unload(struct Object *o);
 u32 sync_object_generate_id(void);
 u8 sync_object_is_initialized(u32 syncId);
+u8 sync_object_should_update_locally(struct Object *o);
+void sync_object_get_debug_state(struct SyncObjectDebugState *out);
 u8 sync_object_pop_outgoing_packet(u8 *dst, u32 dstSize);
 void sync_object_consume_packet(const u8 *data, u32 len);
 

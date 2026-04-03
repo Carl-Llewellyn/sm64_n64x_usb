@@ -3,6 +3,7 @@
 #include "engine/graph_node.h"
 #include "game/area.h"
 #include "game/game_init.h"
+#include "game/memory.h"
 #include "model_ids.h"
 #include "object_constants.h"
 #include "object_helpers.h"
@@ -24,6 +25,7 @@ static u8 sSyncTxPackets[SYNC_OBJECT_TX_QUEUE_CAPACITY][SYNC_OBJECT_PACKET_SIZE]
 static u32 sSyncTxReadIndex = 0;
 static u32 sSyncTxWriteIndex = 0;
 static u32 sSyncTxCount = 0;
+static struct SyncObjectDebugState sSyncDebugState;
 
 static s32 sync_object_find_slot_by_id(u32 syncId);
 static struct SyncObject *sync_object_attach_remote(struct Object *o, u32 syncId,
@@ -102,6 +104,14 @@ static u8 sync_object_enqueue_packet(const u8 *packet) {
     return TRUE;
 }
 
+void sync_object_get_debug_state(struct SyncObjectDebugState *out) {
+    if (out == NULL) {
+        return;
+    }
+
+    *out = sSyncDebugState;
+}
+
 /*
  * Fixed object block format (80 bytes, no inner header):
  *   0  ownerSlot   (u8)
@@ -128,7 +138,9 @@ static u8 sync_object_enqueue_packet(const u8 *packet) {
  *   64 syncDeath   (u32 be)
  *   68 coopFlags   (u32 be)
  *   72 areaIndex   (u8)
- *   73-79 reserved
+ *   73 modelId     (u8, 0 means unknown/clone path)
+ *   74 bhvParams   (u32 be)
+ *   78-79 reserved
  */
 static u8 sync_object_serialize(const struct SyncObject *so, u8 *out) {
     const struct Object *o;
@@ -234,7 +246,7 @@ static void sync_object_apply_remote_state(struct SyncObject *so, const u8 *pack
     so->ownerSlot = ownerSlot;
     so->authority = authority;
     so->lastRecvFrame = frame;
-    so->lastUpdateFrame = frame;
+    so->lastUpdateFrame = gGlobalTimer;
 
     o->oAction = (s32)sm64usb_read_be32(&packet[16]);
     o->oSubAction = (s32)sm64usb_read_be32(&packet[20]);
@@ -262,6 +274,13 @@ static void sync_object_apply_remote_state(struct SyncObject *so, const u8 *pack
     o->header.gfx.angle[1] = faceYaw;
     o->header.gfx.angle[2] = faceRoll;
     o->header.gfx.areaIndex = packet[72];
+
+    sSyncDebugState.remoteApplyCount++;
+    sSyncDebugState.lastRemoteSyncId = syncId;
+    sSyncDebugState.lastRemoteFrame = frame;
+    sSyncDebugState.lastRemotePosX = (s32) posX;
+    sSyncDebugState.lastRemotePosY = (s32) posY;
+    sSyncDebugState.lastRemotePosZ = (s32) posZ;
 }
 
 static s32 sync_object_find_slot_by_id(u32 syncId) {
@@ -342,7 +361,7 @@ static struct SyncObject *sync_object_attach_remote(struct Object *o, u32 syncId
     so->id = syncId;
     so->o = o;
     so->behavior = behavior;
-    so->lastUpdateFrame = frame;
+    so->lastUpdateFrame = gGlobalTimer;
     so->lastSyncHash = sync_object_compute_hash(o);
     so->lastSentFrame = 0;
     so->lastRecvFrame = frame - 1;
@@ -354,16 +373,26 @@ static struct SyncObject *sync_object_attach_remote(struct Object *o, u32 syncId
     o->oSyncID = syncId;
     o->oSyncDeath = 0;
     o->oCoopFlags |= COOP_OBJ_FLAG_INITIALIZED | COOP_OBJ_FLAG_NETWORK;
+    sSyncDebugState.remoteSpawnCount++;
+    sSyncDebugState.lastRemoteSyncId = syncId;
+    sSyncDebugState.lastRemoteFrame = frame;
     return so;
 }
 
 static struct Object *sync_object_spawn_remote(const u8 *packet) {
     const BehaviorScript *behavior;
-    struct GraphNode *sharedChild;
     struct Object *obj;
     struct Object *parent;
     u32 behaviorPtr;
+    u32 bhvParams;
+    u32 model;
     u8 areaIndex;
+    s16 facePitch;
+    s16 faceYaw;
+    s16 faceRoll;
+    f32 posX;
+    f32 posY;
+    f32 posZ;
 
     if (packet == NULL) {
         return NULL;
@@ -375,7 +404,19 @@ static struct Object *sync_object_spawn_remote(const u8 *packet) {
     }
 
     behavior = (const BehaviorScript *)(uintptr_t)behaviorPtr;
+    if (behaviorPtr < 0x80000000u) {
+        behavior = (const BehaviorScript *)segmented_to_virtual((const void *)(uintptr_t)behaviorPtr);
+    }
+
+    model = packet[73];
+    bhvParams = (u32)sm64usb_read_be32(&packet[74]);
     areaIndex = packet[72];
+    facePitch = (s16)sm64usb_read_be16(&packet[28]);
+    faceYaw = (s16)sm64usb_read_be16(&packet[30]);
+    faceRoll = (s16)sm64usb_read_be16(&packet[32]);
+    posX = sync_object_u32_to_f32((u32)sm64usb_read_be32(&packet[36]));
+    posY = sync_object_u32_to_f32((u32)sm64usb_read_be32(&packet[40]));
+    posZ = sync_object_u32_to_f32((u32)sm64usb_read_be32(&packet[44]));
     parent = (gMarioObject != NULL) ? gMarioObject : &gMacroObjectDefaultParent;
 
     obj = create_object(behavior);
@@ -386,13 +427,28 @@ static struct Object *sync_object_spawn_remote(const u8 *packet) {
     obj->parentObj = parent;
     obj->header.gfx.areaIndex = areaIndex;
     obj->header.gfx.activeAreaIndex = areaIndex;
-    geo_obj_init((struct GraphNodeObject *)&obj->header.gfx, gLoadedGraphNodes[MODEL_NONE],
+    geo_obj_init((struct GraphNodeObject *)&obj->header.gfx, gLoadedGraphNodes[model],
                  gVec3fZero, gVec3sZero);
-
-    sharedChild = sync_object_find_shared_child(behavior);
-    if (sharedChild != NULL) {
-        obj->header.gfx.sharedChild = sharedChild;
-    }
+    obj->oBhvParams = (s32)bhvParams;
+    obj->oBhvParams2ndByte = (bhvParams >> 16) & 0xff;
+    obj->oPosX = posX;
+    obj->oPosY = posY;
+    obj->oPosZ = posZ;
+    obj->oHomeX = posX;
+    obj->oHomeY = posY;
+    obj->oHomeZ = posZ;
+    obj->oFaceAnglePitch = facePitch;
+    obj->oFaceAngleYaw = faceYaw;
+    obj->oFaceAngleRoll = faceRoll;
+    obj->oMoveAnglePitch = facePitch;
+    obj->oMoveAngleYaw = faceYaw;
+    obj->oMoveAngleRoll = faceRoll;
+    obj->header.gfx.pos[0] = posX;
+    obj->header.gfx.pos[1] = posY;
+    obj->header.gfx.pos[2] = posZ;
+    obj->header.gfx.angle[0] = facePitch;
+    obj->header.gfx.angle[1] = faceYaw;
+    obj->header.gfx.angle[2] = faceRoll;
 
     return obj;
 }
@@ -434,6 +490,16 @@ void sync_object_system_reset(void) {
     sSyncTxWriteIndex = 0;
     sSyncTxCount = 0;
 
+    sSyncDebugState.remoteSpawnCount = 0;
+    sSyncDebugState.remoteApplyCount = 0;
+    sSyncDebugState.remoteDeleteCount = 0;
+    sSyncDebugState.remoteActiveCount = 0;
+    sSyncDebugState.lastRemoteSyncId = 0;
+    sSyncDebugState.lastRemoteFrame = 0;
+    sSyncDebugState.lastRemotePosX = 0;
+    sSyncDebugState.lastRemotePosY = 0;
+    sSyncDebugState.lastRemotePosZ = 0;
+
     sNextSyncId = (SYNC_ID_BLOCK_SIZE / 2);
     sSyncGeneration++;
     if (sSyncGeneration == 0) {
@@ -444,6 +510,7 @@ void sync_object_system_reset(void) {
 void sync_object_system_update(void) {
     s32 i;
     u32 now = gGlobalTimer;
+    u32 remoteActiveCount = 0;
 
     for (i = 0; i < SYNC_OBJECT_POOL_CAPACITY; i++) {
         struct SyncObject *so = &sSyncObjects[i];
@@ -463,7 +530,9 @@ void sync_object_system_update(void) {
             continue;
         }
         if (so->ownerSlot != SYNC_LOCAL_PLAYER_SLOT) {
-            if ((u32)(now - so->lastRecvFrame) > (u32)SYNC_REMOTE_STALE_FRAMES) {
+            remoteActiveCount++;
+            if ((u32)(now - so->lastUpdateFrame) > (u32)SYNC_REMOTE_STALE_FRAMES) {
+                sSyncDebugState.remoteDeleteCount++;
                 mark_obj_for_deletion(o);
             }
             continue;
@@ -486,6 +555,8 @@ void sync_object_system_update(void) {
             }
         }
     }
+
+    sSyncDebugState.remoteActiveCount = remoteActiveCount;
 }
 
 u32 sync_object_generate_id(void) {
@@ -526,6 +597,21 @@ u8 sync_object_is_initialized(u32 syncId) {
         return FALSE;
     }
     return (so->o->oCoopFlags & COOP_OBJ_FLAG_INITIALIZED) != 0;
+}
+
+u8 sync_object_should_update_locally(struct Object *o) {
+    struct SyncObject *so;
+
+    if (o == NULL || o->oSyncID == SYNC_ID_NONE) {
+        return TRUE;
+    }
+
+    so = sync_object_get(o->oSyncID);
+    if (so == NULL || so->o != o) {
+        return TRUE;
+    }
+
+    return so->ownerSlot == SYNC_LOCAL_PLAYER_SLOT;
 }
 
 struct SyncObject *sync_object_init(struct Object *o, f32 maxSyncDistance) {

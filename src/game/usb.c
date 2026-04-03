@@ -14,7 +14,7 @@
 #include "sync_object.h"
 #include "usb_comm.h"
 
-static char gBuf[32];
+static char gBuf[64];
 
 #define SM64_USB_DEBUG_PRINT 1
 #define SM64_USB_FRAME_PAYLOAD_SIZE (SM64_USB_FIXED_PLAYER_BLOCK_SIZE + SYNC_OBJECT_PACKET_SIZE)
@@ -42,9 +42,12 @@ static void sm64usb_zero_bytes(u8 *dst, int len) {
 static void usb_print_incoming(const u8 *data) {
     int i = 0;
     int y = 12;
+    struct SyncObjectDebugState syncDebug;
     u16 buttons = sm64usb_read_be16(&data[SM64_USB_FP_O_BUTTONS]);
     s8 stick_x = (s8)data[SM64_USB_FP_O_STICK_X];
     s8 stick_y = (s8)data[SM64_USB_FP_O_STICK_Y];
+
+    sync_object_get_debug_state(&syncDebug);
 
     /* sprintf(gBuf, "rx %02X %02X %02X %02X",
             data[0], data[1], data[2], data[3]);
@@ -63,11 +66,25 @@ static void usb_print_incoming(const u8 *data) {
     print_text(0, y, gBuf);
     y += 20; */
 
-    /* sprintf(gBuf, "pid=%d btn=%04X sx=%d sy=%d",
-            (int)data[SM64_USB_O_PLAYER_ID],
-            (unsigned int)buttons,
-            (int)stick_x, (int)stick_y);
-    print_text(0, y, gBuf); */
+    sprintf(gBuf, "sp%lu ap%lu del%lu act%lu",
+            (unsigned long)syncDebug.remoteSpawnCount,
+            (unsigned long)syncDebug.remoteApplyCount,
+            (unsigned long)syncDebug.remoteDeleteCount,
+            (unsigned long)syncDebug.remoteActiveCount);
+    print_text(0, y, gBuf);
+    y += 20;
+
+    sprintf(gBuf, "id%lu fr%lu",
+            (unsigned long)syncDebug.lastRemoteSyncId,
+            (unsigned long)syncDebug.lastRemoteFrame);
+    print_text(0, y, gBuf);
+    y += 20;
+
+    sprintf(gBuf, "x%d y%d z%d",
+            (int)syncDebug.lastRemotePosX,
+            (int)syncDebug.lastRemotePosY,
+            (int)syncDebug.lastRemotePosZ);
+    print_text(0, y, gBuf);
 }
 
 //split whatever comes in to write 32bit

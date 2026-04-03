@@ -310,7 +310,9 @@ s32 update_objects_starting_at(struct ObjectNode *objList, struct ObjectNode *fi
         gCurrentObject = (struct Object *) firstObj;
 
         gCurrentObject->header.gfx.node.flags |= GRAPH_RENDER_HAS_ANIMATION;
-        cur_obj_update();
+        if (sync_object_should_update_locally(gCurrentObject)) {
+            cur_obj_update();
+        }
 
         firstObj = firstObj->next;
         count++;
@@ -357,7 +359,9 @@ s32 update_objects_during_time_stop(struct ObjectNode *objList, struct ObjectNod
         // Only update if unfrozen
         if (unfrozen) {
             gCurrentObject->header.gfx.node.flags |= GRAPH_RENDER_HAS_ANIMATION;
-            cur_obj_update();
+            if (sync_object_should_update_locally(gCurrentObject)) {
+                cur_obj_update();
+            }
         } else {
             gCurrentObject->header.gfx.node.flags &= ~GRAPH_RENDER_HAS_ANIMATION;
         }
