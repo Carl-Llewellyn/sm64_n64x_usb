@@ -345,7 +345,7 @@ static struct SyncObject *sync_object_attach_remote(struct Object *o, u32 syncId
     so->lastUpdateFrame = frame;
     so->lastSyncHash = sync_object_compute_hash(o);
     so->lastSentFrame = 0;
-    so->lastRecvFrame = frame;
+    so->lastRecvFrame = frame - 1;
     so->ownerSlot = ownerSlot;
     so->authority = authority;
     so->valid = TRUE;
