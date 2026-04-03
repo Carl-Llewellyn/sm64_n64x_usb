@@ -10,6 +10,7 @@
 #include "object_fields.h"
 #include "object_helpers.h"
 #include "object_list_processor.h"
+#include "sync_object.h"
 #include "spawn_object.h"
 #include "types.h"
 
@@ -186,6 +187,7 @@ UNUSED static void unused_delete_leaf_nodes(struct Object *obj) {
  * Free the given object.
  */
 void unload_object(struct Object *obj) {
+    sync_object_on_unload(obj);
     obj->activeFlags = ACTIVE_FLAG_DEACTIVATED;
     obj->prevObj = NULL;
 
@@ -261,7 +263,7 @@ struct Object *allocate_object(struct ObjectNode *objList) {
     obj->hurtboxRadius = 0.0f;
     obj->hurtboxHeight = 0.0f;
     obj->hitboxDownOffset = 0.0f;
-    obj->unused2 = 0;
+    obj->heldByPlayerIndex = 0;
 
     obj->platform = NULL;
     obj->collisionData = NULL;
@@ -332,7 +334,10 @@ struct Object *create_object(const BehaviorScript *bhvScript) {
 
     if (objListIndex == OBJ_LIST_UNIMPORTANT) {
         obj->activeFlags |= ACTIVE_FLAG_UNIMPORTANT;
+        obj->oCoopFlags |= COOP_OBJ_FLAG_NON_SYNC;
     }
+
+    sync_object_init(obj, 2000.0f);
 
     //! They intended to snap certain objects to the floor when they spawn.
     //  However, at this point the object's position is the origin. So this will

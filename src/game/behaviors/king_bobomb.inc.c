@@ -15,32 +15,20 @@ Gfx *geo_update_held_mario_pos(s32 run, UNUSED struct GraphNode *node, Mat4 mtx)
     return NULL;
 }
 
-static s32 mario_obj_to_index(struct Object *marioObj) {
-    s32 i;
-
-    for (i = 0; i < MAX_PLAYERS; i++) {
-        if (gMarioObjects[i] == marioObj) {
-            return i;
-        }
-    }
-
-    return -1;
-}
-
 static struct Object *king_bobomb_get_target_mario(void) {
     struct Object *best = gMarioObject;
     f32 bestDist = 1e30f;
+    struct Object *holder;
     s32 i;
 
-    if (o->oKingBobombHolderIndex >= 0 && o->oKingBobombHolderIndex < MAX_PLAYERS) {
-        struct Object *holder = gMarioObjects[o->oKingBobombHolderIndex];
+    if (o->oHeldState == HELD_HELD && o->heldByPlayerIndex < MAX_PLAYERS) {
+        holder = gMarioObjects[o->heldByPlayerIndex];
         if (holder != NULL) {
             return holder;
         }
     }
 
     if (o->parentObj != NULL && o->parentObj->behavior == segmented_to_virtual(bhvMario)) {
-        o->oKingBobombHolderIndex = mario_obj_to_index(o->parentObj);
         return o->parentObj;
     }
 
@@ -78,7 +66,6 @@ void king_bobomb_act_0(void) {
         cur_obj_init_animation_with_sound(5);
         cur_obj_set_pos_to_home();
         o->oHealth = 3;
-        o->oKingBobombHolderIndex = -1;
 
         if (cur_obj_can_mario_activate_textbox_2(500.0f, 100.0f)) {
             o->oSubAction++;
@@ -443,9 +430,6 @@ void bhv_king_bobomb_loop(void) {
             king_bobomb_move();
             break;
         case HELD_HELD:
-            if (o->parentObj != NULL && o->parentObj->behavior == segmented_to_virtual(bhvMario)) {
-                o->oKingBobombHolderIndex = mario_obj_to_index(o->parentObj);
-            }
             cur_obj_unrender_set_action_and_anim(6, 1);
             break;
         case HELD_THROWN:

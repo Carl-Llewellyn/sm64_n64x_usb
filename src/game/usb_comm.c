@@ -191,6 +191,40 @@ static void usb_comm_store_decoded(u8 player_id, u16 buttons, s8 stick_x, s8 sti
     sRemoteStates[player_id].last_seen_frame = gGlobalTimer;
 }
 
+void usb_comm_consume_fixed_player_block(const u8 *data, u32 len) {
+    u8 pid;
+    s32 x;
+    s32 y;
+    s32 z;
+    u16 buttons;
+    s16 pitch;
+    s16 yaw;
+    s16 roll;
+    s16 cam_yaw;
+    s8 stick_x;
+    s8 stick_y;
+    u8 level;
+
+    if (data == NULL || len < SM64_USB_FIXED_PLAYER_BLOCK_SIZE) {
+        return;
+    }
+
+    pid     = data[SM64_USB_FP_O_PLAYER_ID];
+    x       = sm64usb_read_be32(&data[SM64_USB_FP_O_X]);
+    y       = sm64usb_read_be32(&data[SM64_USB_FP_O_Y]);
+    z       = sm64usb_read_be32(&data[SM64_USB_FP_O_Z]);
+    pitch   = (s16)sm64usb_read_be16(&data[SM64_USB_FP_O_PITCH]);
+    yaw     = (s16)sm64usb_read_be16(&data[SM64_USB_FP_O_YAW]);
+    roll    = (s16)sm64usb_read_be16(&data[SM64_USB_FP_O_ROLL]);
+    cam_yaw = (s16)sm64usb_read_be16(&data[SM64_USB_FP_O_CAM_YAW]);
+    buttons = sm64usb_read_be16(&data[SM64_USB_FP_O_BUTTONS]);
+    stick_x = (s8)data[SM64_USB_FP_O_STICK_X];
+    stick_y = (s8)data[SM64_USB_FP_O_STICK_Y];
+    level   = data[SM64_USB_FP_O_LEVEL];
+
+    usb_comm_store_decoded(pid, buttons, stick_x, stick_y, x, y, z, pitch, yaw, roll, cam_yaw, level);
+}
+
 void usb_comm_consume_bytes(const u8 *data, u32 len) {
     u32 i;
 

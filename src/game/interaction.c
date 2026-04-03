@@ -1494,13 +1494,11 @@ u32 check_object_grab_mario(struct MarioState *m, UNUSED u32 interactType, struc
             m->faceAngle[1] = o->oMoveAngleYaw;
             m->interactObj = o;
             m->usedObj = o;
-            if (o->behavior == segmented_to_virtual(bhvKingBobomb)) {
-                s32 i;
-                for (i = 0; i < MAX_PLAYERS; i++) {
-                    if (gMarioObjects[i] == m->marioObj) {
-                        o->oKingBobombHolderIndex = i;
-                        break;
-                    }
+            s32 i;
+            for (i = 0; i < MAX_PLAYERS; i++) {
+                if (gMarioObjects[i] == m->marioObj) {
+                    o->heldByPlayerIndex = i;
+                    break;
                 }
             }
 

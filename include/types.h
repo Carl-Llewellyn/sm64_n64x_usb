@@ -194,7 +194,7 @@ struct Object {
     /*0x204*/ f32 hurtboxHeight;
     /*0x208*/ f32 hitboxDownOffset;
     /*0x20C*/ const BehaviorScript *behavior;
-    /*0x210*/ u32 unused2;
+    /*0x210*/ u32 heldByPlayerIndex;
     /*0x214*/ struct Object *platform;
     /*0x218*/ void *collisionData;
     /*0x21C*/ Mat4 transform;
@@ -314,5 +314,10 @@ struct MarioState {
     /*0xC0*/ f32 quicksandDepth;
     /*0xC4*/ f32 gettingBlownGravity;
 };
+
+#define COOP_OBJ_FLAG_NETWORK     (1 << 0)
+#define COOP_OBJ_FLAG_LUA         (1 << 1)
+#define COOP_OBJ_FLAG_NON_SYNC    (1 << 2)
+#define COOP_OBJ_FLAG_INITIALIZED (1 << 3)
 
 #endif // TYPES_H

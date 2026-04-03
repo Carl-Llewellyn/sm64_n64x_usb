@@ -11,11 +11,14 @@
 #include "game_init.h"
 #include "level_update.h"
 #include "PR/os_pi.h"
+#include "sync_object.h"
 #include "usb_comm.h"
 
 static char gBuf[32];
 
 #define SM64_USB_DEBUG_PRINT 1
+#define SM64_USB_FRAME_PAYLOAD_SIZE (SM64_USB_FIXED_PLAYER_BLOCK_SIZE + SYNC_OBJECT_PACKET_SIZE)
+#define SM64_USB_FRAME_SIZE (SM64_USB_TRANSPORT_HEADER_SIZE + SM64_USB_FRAME_PAYLOAD_SIZE)
 
 void __osPiGetAccess(void);
 void __osPiRelAccess(void);
@@ -29,12 +32,19 @@ static u32 float_to_u32(f32 f) {
     return u.u;
 }
 
+static void sm64usb_zero_bytes(u8 *dst, int len) {
+    int i;
+    for (i = 0; i < len; i++) {
+        dst[i] = 0;
+    }
+}
+
 static void usb_print_incoming(const u8 *data) {
     int i = 0;
     int y = 12;
-    u16 buttons = sm64usb_read_be16(&data[SM64_USB_O_BUTTONS]);
-    s8 stick_x = (s8)data[SM64_USB_O_STICK_X];
-    s8 stick_y = (s8)data[SM64_USB_O_STICK_Y];
+    u16 buttons = sm64usb_read_be16(&data[SM64_USB_FP_O_BUTTONS]);
+    s8 stick_x = (s8)data[SM64_USB_FP_O_STICK_X];
+    s8 stick_y = (s8)data[SM64_USB_FP_O_STICK_Y];
 
     /* sprintf(gBuf, "rx %02X %02X %02X %02X",
             data[0], data[1], data[2], data[3]);
@@ -61,13 +71,13 @@ static void usb_print_incoming(const u8 *data) {
 }
 
 //split whatever comes in to write 32bit
-void send_32_bit(int len, u8 *data){
+void send_32_bit(int len, const u8 *data){
     u32 *curr_write_add = (u32 *)CART_SRAM_START;
     int i = 0;
     u32 word = 0;
     int n = 0;
 
-    if(len != SM64_USB_PACKET_SIZE){
+    if (len <= 0 || len > SM64_USB_IO_BUFFER_SIZE) {
         return;
     }
 
@@ -84,32 +94,44 @@ void send_32_bit(int len, u8 *data){
 
 //collect all the data then send it to the send func
 void usb_send_state(struct Controller *c, struct MarioState *mstate) {
-    u8 raw[SM64_USB_PACKET_SIZE] = {0};
+    u8 playerPacket[SM64_USB_FIXED_PLAYER_BLOCK_SIZE];
+    u8 objectPacket[SYNC_OBJECT_PACKET_SIZE];
+    u8 frame[SM64_USB_IO_BUFFER_SIZE];
     u16 btn = (u16)c->buttonDown;
 
-    raw[SM64_USB_O_SYNC0] = SM64_USB_SYNC0;
-    raw[SM64_USB_O_SYNC1] = SM64_USB_SYNC1;
-    raw[SM64_USB_O_VERSION] = SM64_USB_VERSION;
-    raw[SM64_USB_O_PLAYER_ID] = 0xFF;
+    sm64usb_zero_bytes(playerPacket, SM64_USB_FIXED_PLAYER_BLOCK_SIZE);
+    sm64usb_zero_bytes(objectPacket, SYNC_OBJECT_PACKET_SIZE);
+    sm64usb_zero_bytes(frame, SM64_USB_IO_BUFFER_SIZE);
 
-    sm64usb_write_be32(&raw[SM64_USB_O_X], float_to_u32(mstate->pos[0]));
-    sm64usb_write_be32(&raw[SM64_USB_O_Y], float_to_u32(mstate->pos[1]));
-    sm64usb_write_be32(&raw[SM64_USB_O_Z], float_to_u32(mstate->pos[2]));
+    playerPacket[SM64_USB_FP_O_PLAYER_ID] = 0xFF;
+    sm64usb_write_be32(&playerPacket[SM64_USB_FP_O_X], float_to_u32(mstate->pos[0]));
+    sm64usb_write_be32(&playerPacket[SM64_USB_FP_O_Y], float_to_u32(mstate->pos[1]));
+    sm64usb_write_be32(&playerPacket[SM64_USB_FP_O_Z], float_to_u32(mstate->pos[2]));
+    sm64usb_write_be16(&playerPacket[SM64_USB_FP_O_PITCH], (u16)mstate->faceAngle[0]);
+    sm64usb_write_be16(&playerPacket[SM64_USB_FP_O_YAW], (u16)mstate->faceAngle[1]);
+    sm64usb_write_be16(&playerPacket[SM64_USB_FP_O_ROLL], (u16)mstate->faceAngle[2]);
+    sm64usb_write_be16(&playerPacket[SM64_USB_FP_O_CAM_YAW], (u16)mstate->area->camera->yaw);
+    sm64usb_write_be16(&playerPacket[SM64_USB_FP_O_BUTTONS], btn);
+    playerPacket[SM64_USB_FP_O_STICK_X] = (u8)c->rawStickX;
+    playerPacket[SM64_USB_FP_O_STICK_Y] = (u8)c->rawStickY;
+    playerPacket[SM64_USB_FP_O_LEVEL] = (u8)gCurrLevelNum;
 
-    sm64usb_write_be16(&raw[SM64_USB_O_PITCH], (u16)mstate->faceAngle[0]);
-    sm64usb_write_be16(&raw[SM64_USB_O_YAW], (u16)mstate->faceAngle[1]);
-    sm64usb_write_be16(&raw[SM64_USB_O_ROLL], (u16)mstate->faceAngle[2]);
-    sm64usb_write_be16(&raw[SM64_USB_O_CAM_YAW], (u16)mstate->area->camera->yaw);
-    sm64usb_write_be16(&raw[SM64_USB_O_BUTTONS], btn);
-    raw[SM64_USB_O_STICK_X] = (u8)c->rawStickX;
-    raw[SM64_USB_O_STICK_Y] = (u8)c->rawStickY;
-    raw[SM64_USB_O_LEVEL] = (u8)gCurrLevelNum;
+    (void)sync_object_pop_outgoing_packet(objectPacket, SYNC_OBJECT_PACKET_SIZE);
 
-    send_32_bit(SM64_USB_PACKET_SIZE, raw);
+    memcpy(&frame[SM64_USB_TRANSPORT_HEADER_SIZE], playerPacket, SM64_USB_FIXED_PLAYER_BLOCK_SIZE);
+    memcpy(&frame[SM64_USB_TRANSPORT_HEADER_SIZE + SM64_USB_FIXED_PLAYER_BLOCK_SIZE], objectPacket,
+           SYNC_OBJECT_PACKET_SIZE);
+
+    frame[SM64_USB_T_O_SYNC0] = SM64_USB_TRANSPORT_SYNC0;
+    frame[SM64_USB_T_O_SYNC1] = SM64_USB_TRANSPORT_SYNC1;
+    frame[SM64_USB_T_O_VERSION] = SM64_USB_TRANSPORT_VERSION;
+    frame[SM64_USB_T_O_FLAGS] = 0;
+    sm64usb_write_be16(&frame[SM64_USB_T_O_LEN], SM64_USB_FRAME_PAYLOAD_SIZE);
+
+    send_32_bit(SM64_USB_FRAME_SIZE, frame);
 }
 
-void read_incoming(u8 *data){
-    const int len = SM64_USB_PACKET_SIZE;
+void read_incoming(u8 *data, int len){
     u32 *curr_read_add = (u32 *)CART_SRAM_START;
     int i = 0;
     u32 word = 0;
@@ -126,7 +148,10 @@ void read_incoming(u8 *data){
 }
 
 void usb_update(void) {
-    u8 incomingState[SM64_USB_PACKET_SIZE] = {0};
+    u8 incomingState[SM64_USB_IO_BUFFER_SIZE];
+    const u8 *payload = NULL;
+
+    sm64usb_zero_bytes(incomingState, SM64_USB_IO_BUFFER_SIZE);
 
     if (gMarioObject != NULL) {
         __osPiGetAccess();
@@ -136,12 +161,33 @@ void usb_update(void) {
         usb_send_state(&gControllers[0], &gMarioStates[0]);
 
         //read incoming data
-        read_incoming(incomingState);
+        read_incoming(incomingState, SM64_USB_IO_BUFFER_SIZE);
         __osPiRelAccess();
-        usb_comm_consume_bytes(incomingState, SM64_USB_PACKET_SIZE);
+
+        if (incomingState[SM64_USB_T_O_SYNC0] == SM64_USB_TRANSPORT_SYNC0
+            && incomingState[SM64_USB_T_O_SYNC1] == SM64_USB_TRANSPORT_SYNC1
+            && incomingState[SM64_USB_T_O_VERSION] == SM64_USB_TRANSPORT_VERSION) {
+            u16 payloadLen = sm64usb_read_be16(&incomingState[SM64_USB_T_O_LEN]);
+            if (payloadLen >= SM64_USB_FRAME_PAYLOAD_SIZE) {
+                payload = &incomingState[SM64_USB_TRANSPORT_HEADER_SIZE];
+            }
+        } else {
+            payload = NULL;
+        }
+
+        if (payload != NULL) {
+            usb_comm_consume_fixed_player_block(payload, SM64_USB_FIXED_PLAYER_BLOCK_SIZE);
+            sync_object_consume_packet(payload + SM64_USB_FIXED_PLAYER_BLOCK_SIZE, SYNC_OBJECT_PACKET_SIZE);
+        } else {
+            usb_comm_consume_bytes(incomingState, SM64_USB_PLAYER_PACKET_SIZE);
+        }
         usb_comm_apply_remote_inputs();
 #if SM64_USB_DEBUG_PRINT
-        usb_print_incoming(incomingState);
+        if (payload != NULL) {
+            usb_print_incoming(payload);
+        } else {
+            usb_print_incoming(incomingState);
+        }
 #endif
         //__osRestoreInt(prevInt);//END DISABLE INTERRUPTS
     }   

@@ -20,20 +20,15 @@ static void get_anchor_mario(struct Object **marioObj, struct MarioState **mario
     *marioObj = gMarioObject;
     *marioState = &gMarioStates[0];
 
-    if (o->parentObj != NULL && o->parentObj->behavior == segmented_to_virtual(bhvKingBobomb)) {
-        s32 idx = o->parentObj->oKingBobombHolderIndex;
-        if (idx >= 0 && idx < MAX_PLAYERS && gMarioObjects[idx] != NULL) {
-            *marioObj = gMarioObjects[idx];
-            *marioState = &gMarioStates[idx];
-            return;
-        }
-    }
-
     for (i = 0; i < MAX_PLAYERS; i++) {
-        if (gMarioObjects[i] == *marioObj) {
-            *marioState = &gMarioStates[i];
-            break;
-        }
+        struct Object *playerObj = gMarioObjects[i];
+        struct MarioState *playerState = &gMarioStates[i];
+        if (playerObj == NULL) { continue; }
+        if (playerState->action != ACT_GRABBED) { continue; }
+        if (playerState->usedObj != o->parentObj && playerState->usedObj != o) { continue; }
+        *marioObj = playerObj;
+        *marioState = playerState;
+        return;
     }
 }
 

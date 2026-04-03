@@ -19,6 +19,7 @@
 #include "platform_displacement.h"
 #include "profiler.h"
 #include "spawn_object.h"
+#include "sync_object.h"
 
 
 /**
@@ -569,6 +570,9 @@ void stub_obj_list_processor_1(void) {
 void clear_objects(void) {
     s32 i;
 
+    sync_object_system_init();
+    sync_object_system_reset();
+
     gTHIWaterDrained = 0;
     gTimeStopState = 0;
     gMarioObject = NULL;
@@ -728,4 +732,5 @@ void update_objects(UNUSED s32 unused) {
     }
 
     gPrevFrameObjectCount = gObjectCounter;
+    sync_object_system_update();
 }
