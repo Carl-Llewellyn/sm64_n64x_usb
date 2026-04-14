@@ -8,8 +8,9 @@
 #define SYNC_ID_NONE 0
 #define SYNC_ID_BLOCK_SIZE 4096
 #define SYNC_OBJECT_POOL_CAPACITY 512
-#define SYNC_OBJECT_PACKET_SIZE 80
+#define SYNC_OBJECT_PACKET_SIZE 104
 #define SYNC_OBJECT_TX_QUEUE_CAPACITY 128
+#define SYNC_OBJECT_EXTRA_FIELDS_MAX 2
 
 struct SyncObject {
     u32 id;
@@ -26,6 +27,8 @@ struct SyncObject {
     u8 authority;
     u8 valid;
     u8 dirty;
+    u8 extraFieldCount;
+    void *extraFields[SYNC_OBJECT_EXTRA_FIELDS_MAX];
 };
 
 struct SyncObjectDebugState {
@@ -45,6 +48,7 @@ void sync_object_system_reset(void);
 void sync_object_system_update(void);
 
 struct SyncObject *sync_object_init(struct Object *o, f32 maxSyncDistance);
+void sync_object_init_field(struct Object *o, void *field);
 struct SyncObject *sync_object_get(u32 syncId);
 void sync_object_forget(struct Object *o);
 void sync_object_on_unload(struct Object *o);
