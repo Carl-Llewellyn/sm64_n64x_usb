@@ -11,5 +11,6 @@ void usb_comm_consume_bytes(const u8 *data, u32 len);
 void usb_comm_consume_fixed_player_block(const u8 *data, u32 len);
 void usb_comm_apply_remote_inputs(void);
 int usb_comm_get_remote_cam_yaw(u8 slot, s16 *outYaw);
+int usb_comm_get_remote_position(u8 slot, f32 *outX, f32 *outY, f32 *outZ);
 
 #endif

@@ -5,6 +5,8 @@
  * and dying, primarily depending on Mario's proximity and interaction state.
  */
 
+#include "../sync_object.h"
+
 /**
  * Reset the Piranha Plant back to a sleeping animation, no matter what state
  * it was in previously, and make it intangible. If Mario is close, transition
@@ -333,6 +335,17 @@ void (*TablePiranhaPlantActions[])(void) = {
  * Main loop for bhvPiranhaPlant.
  */
 void bhv_piranha_plant_loop(void) {
+    if (!sync_object_is_initialized(o->oSyncID)) {
+        sync_object_init(o, 2000.0f);
+        sync_object_init_field(o, &o->oAction);
+        sync_object_init_field(o, &o->oInteractStatus);
+        sync_object_init_field(o, &o->oInteractType);
+        sync_object_init_field(o, &o->oMoveAngleYaw);
+        sync_object_init_field(o, &o->oPiranhaPlantScale);
+        sync_object_init_field(o, &o->oPiranhaPlantSleepMusicState);
+        sync_object_init_field(o, &o->oTimer);
+    }
+
     cur_obj_call_action_function(TablePiranhaPlantActions);
 
     // In WF, hide all Piranha Plants once high enough up.

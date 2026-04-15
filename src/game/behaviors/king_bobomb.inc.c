@@ -1,5 +1,7 @@
 // king_bobomb.inc.c
 
+#include "../sync_object.h"
+
 // Copy of geo_update_projectile_pos_from_parent
 Gfx *geo_update_held_mario_pos(s32 run, UNUSED struct GraphNode *node, Mat4 mtx) {
     if (run == TRUE) {
@@ -418,7 +420,25 @@ void king_bobomb_move(void) {
     }
 }
 
+static void bhv_king_bobomb_override_ownership(u8 *shouldOverride, u8 *shouldOwn) {
+    *shouldOverride = (o->oHeldState == HELD_HELD && o->heldByPlayerIndex == 0);
+    if (*shouldOverride) {
+        *shouldOwn = TRUE;
+    }
+}
+
 void bhv_king_bobomb_loop(void) {
+    if (!sync_object_is_initialized(o->oSyncID)) {
+        struct SyncObject *so = sync_object_init(o, 4000.0f);
+        if (so != NULL) {
+            so->overrideOwnership = bhv_king_bobomb_override_ownership;
+            sync_object_init_field(o, &o->oKingBobombUnk88);
+            sync_object_init_field(o, &o->oFlags);
+            sync_object_init_field(o, &o->oHealth);
+            sync_object_init_field(o, &o->oInteractStatus);
+        }
+    }
+
     f32 sp34 = 20.0f;
     f32 sp30 = 50.0f;
     UNUSED u8 filler[8];

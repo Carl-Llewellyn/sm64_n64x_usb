@@ -5,6 +5,8 @@
  * Lakitu comes before it spawned spinies in processing order.
  */
 
+#include "../sync_object.h"
+
 /**
  * Hitbox for spiny both while thrown and walking. The interaction type is
  * changed to INTERACT_UNKNOWN_08 while walking.
@@ -32,6 +34,19 @@ static u8 sSpinyWalkAttackHandlers[] = {
     /* ATTACK_FAST_ATTACK:           */ ATTACK_HANDLER_KNOCKBACK,
     /* ATTACK_FROM_BELOW:            */ ATTACK_HANDLER_KNOCKBACK,
 };
+
+static u32 spinyAnimCache = 0;
+
+static void bhv_spiny_override_ownership(u8 *shouldOverride, u8 *shouldOwn) {
+    if (o->parentObj == NULL || o->parentObj->activeFlags == ACTIVE_FLAG_DEACTIVATED) {
+        return;
+    }
+    if (o->parentObj->behavior != segmented_to_virtual(bhvEnemyLakitu)) {
+        return;
+    }
+    *shouldOverride = TRUE;
+    *shouldOwn = sync_object_is_owned_locally(o->parentObj->oSyncID);
+}
 
 /**
  * If the spiny was spawned by lakitu and mario is far away, despawn.
@@ -179,7 +194,21 @@ static void spiny_act_thrown_by_lakitu(void) {
  * Update function for bhvSpiny.
  */
 void bhv_spiny_update(void) {
-    // PARTIAL_UPDATE
+    if (!sync_object_is_initialized(o->oSyncID)) {
+        struct SyncObject *so = sync_object_init(o, 4000.0f);
+        if (so != NULL) {
+            so->overrideOwnership = bhv_spiny_override_ownership;
+            sync_object_init_field(o, &o->oGraphYOffset);
+            sync_object_init_field(o, &o->oFaceAngleYaw);
+            sync_object_init_field(o, &o->oSpinyTimeUntilTurn);
+            sync_object_init_field(o, &o->oSpinyTargetYaw);
+            sync_object_init_field(o, &o->oSpinyTurningAwayFromWall);
+            sync_object_init_field(o, &o->oMoveFlags);
+            sync_object_init_field(o, &o->oInteractType);
+            sync_object_init_field(o, &o->oFaceAnglePitch);
+            sync_object_init_field(o, &spinyAnimCache);
+        }
+    }
 
     switch (o->oAction) {
         case SPINY_ACT_WALK:

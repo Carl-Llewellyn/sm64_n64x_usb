@@ -1,5 +1,7 @@
 // chuckya.inc.c
 
+#include "../sync_object.h"
+
 struct UnusedChuckyaData {
     u8 unk0;
     f32 unk4;
@@ -70,6 +72,13 @@ void common_anchor_mario_behavior(f32 sp28, f32 sp2C, s32 sp30) {
 
 void bhv_chuckya_anchor_mario_loop(void) {
     common_anchor_mario_behavior(40.0f, 40.0f, INT_STATUS_MARIO_UNK6);
+}
+
+static void bhv_chuckya_override_ownership(u8 *shouldOverride, u8 *shouldOwn) {
+    *shouldOverride = (o->oHeldState == HELD_HELD && o->heldByPlayerIndex == 0);
+    if (*shouldOverride) {
+        *shouldOwn = TRUE;
+    }
 }
 
 s32 unknown_chuckya_function(s32 sp20, f32 sp24, f32 sp28, s16 sp2C) {
@@ -270,6 +279,18 @@ void chuckya_move(void) {
 }
 
 void bhv_chuckya_loop(void) {
+    if (!sync_object_is_initialized(o->oSyncID)) {
+        struct SyncObject *so = sync_object_init(o, 4000.0f);
+        if (so != NULL) {
+            so->overrideOwnership = bhv_chuckya_override_ownership;
+            sync_object_init_field(o, &o->oChuckyaUnk88);
+            sync_object_init_field(o, &o->oChuckyaUnkF8);
+            sync_object_init_field(o, &o->oChuckyaUnkFC);
+            sync_object_init_field(o, &o->oChuckyaUnk100);
+            sync_object_init_field(o, &o->oFaceAnglePitch);
+        }
+    }
+
     f32 sp2C = 20.0f;
     f32 sp28 = 50.0f;
 

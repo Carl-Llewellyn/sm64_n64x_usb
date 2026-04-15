@@ -8,9 +8,11 @@
 #define SYNC_ID_NONE 0
 #define SYNC_ID_BLOCK_SIZE 4096
 #define SYNC_OBJECT_POOL_CAPACITY 512
-#define SYNC_OBJECT_PACKET_SIZE 104
+#define SYNC_OBJECT_PACKET_SIZE 140
 #define SYNC_OBJECT_TX_QUEUE_CAPACITY 128
-#define SYNC_OBJECT_EXTRA_FIELDS_MAX 2
+#define SYNC_OBJECT_EXTRA_FIELDS_MAX 8
+
+typedef void (*SyncObjectOwnershipOverride)(u8 *shouldOverride, u8 *shouldOwn);
 
 struct SyncObject {
     u32 id;
@@ -27,8 +29,11 @@ struct SyncObject {
     u8 authority;
     u8 valid;
     u8 dirty;
+    u8 ownedLocally;
     u8 extraFieldCount;
+    SyncObjectOwnershipOverride overrideOwnership;
     void *extraFields[SYNC_OBJECT_EXTRA_FIELDS_MAX];
+    u8 extraFieldSizes[SYNC_OBJECT_EXTRA_FIELDS_MAX];
 };
 
 struct SyncObjectDebugState {
@@ -36,6 +41,10 @@ struct SyncObjectDebugState {
     u32 remoteApplyCount;
     u32 remoteDeleteCount;
     u32 remoteActiveCount;
+    u32 localEligibleCount;
+    u32 localOwnedCount;
+    u32 localTxEnqueueCount;
+    u32 lastLocalTxSyncId;
     u32 lastRemoteSyncId;
     u32 lastRemoteFrame;
     s32 lastRemotePosX;
@@ -49,11 +58,14 @@ void sync_object_system_update(void);
 
 struct SyncObject *sync_object_init(struct Object *o, f32 maxSyncDistance);
 void sync_object_init_field(struct Object *o, void *field);
+void sync_object_init_field_with_size(struct Object *o, void *field, u8 size);
 struct SyncObject *sync_object_get(u32 syncId);
 void sync_object_forget(struct Object *o);
 void sync_object_on_unload(struct Object *o);
 u32 sync_object_generate_id(void);
 u8 sync_object_is_initialized(u32 syncId);
+u8 sync_object_is_owned_locally(u32 syncId);
+u8 sync_object_should_own(u32 syncId);
 u8 sync_object_should_update_locally(struct Object *o);
 void sync_object_get_debug_state(struct SyncObjectDebugState *out);
 u8 sync_object_pop_outgoing_packet(u8 *dst, u32 dstSize);

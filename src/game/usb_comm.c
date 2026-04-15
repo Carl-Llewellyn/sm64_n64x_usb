@@ -170,6 +170,37 @@ int usb_comm_get_remote_cam_yaw(u8 slot, s16 *outYaw) {
     return 1;
 }
 
+int usb_comm_get_remote_position(u8 slot, f32 *outX, f32 *outY, f32 *outZ) {
+    u32 now = gGlobalTimer;
+    u8 player_id;
+
+    if (outX == NULL || outY == NULL || outZ == NULL) {
+        return 0;
+    }
+    if (slot == 0) {
+        return 0;
+    }
+
+    player_id = (u8)(slot - 1);
+    if (player_id >= SM64_USB_MAX_PLAYERS) {
+        return 0;
+    }
+    if (!sRemoteStates[player_id].valid) {
+        return 0;
+    }
+    if ((u32)(now - sRemoteStates[player_id].last_seen_frame) > (u32)SM64_USB_STALE_FRAMES) {
+        return 0;
+    }
+    if (sRemoteStates[player_id].level != (u8)gCurrLevelNum) {
+        return 0;
+    }
+
+    *outX = sm64usb_s32_to_f32(sRemoteStates[player_id].x);
+    *outY = sm64usb_s32_to_f32(sRemoteStates[player_id].y);
+    *outZ = sm64usb_s32_to_f32(sRemoteStates[player_id].z);
+    return 1;
+}
+
 /* Store already-decoded fields (host-endian), so the rest of the game never worries about byte order. */
 static void usb_comm_store_decoded(u8 player_id, u16 buttons, s8 stick_x, s8 stick_y, s32 x, s32 y, s32 z,
                                    s16 pitch, s16 yaw, s16 roll, s16 cam_yaw, u8 level) {

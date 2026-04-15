@@ -15,10 +15,14 @@ BUFFER_SIZE = 256
 HEADER_FMT = "<6I"
 HEADER_SIZE = struct.calcsize(HEADER_FMT)
 FILE_SIZE = HEADER_SIZE + BUFFER_SIZE + BUFFER_SIZE
+ACTIVE_FLAG_ACTIVE = 0x0001
+ACTIVE_FLAG_UNK8 = 0x0100
+GRAPH_RENDER_ACTIVE = 0x0001
+GRAPH_RENDER_HAS_ANIMATION = 0x0020
 
 TRANSPORT_HEADER_SIZE = 6
 PLAYER_BLOCK_SIZE = 30
-OBJECT_BLOCK_SIZE = 80
+OBJECT_BLOCK_SIZE = 140
 FRAME_PAYLOAD_SIZE = PLAYER_BLOCK_SIZE + OBJECT_BLOCK_SIZE
 OBJECT_OFFSET = TRANSPORT_HEADER_SIZE + PLAYER_BLOCK_SIZE
 DEFAULT_GOOMBA_BEHAVIOR_PTR = 0x13000F4C
@@ -173,6 +177,10 @@ class LoopbackState:
         obj[56:60] = struct.pack(">f", vel_z)
         self.motion_tick += 1
         obj[73:80] = b"\x00" * 7
+        obj[96] = 0
+        obj[97:100] = b"\x00" * 3
+        obj[100:108] = b"\x00" * 8
+        obj[108:140] = b"\x00" * 32
         rx[OBJECT_OFFSET:OBJECT_OFFSET + OBJECT_BLOCK_SIZE] = obj
         return rx
 
@@ -231,6 +239,15 @@ class SpawnState:
         obj[73] = self.model_id & 0xFF
         write_u32be(obj, 74, self.bhv_params)
         obj[78:80] = b"\x00" * 2
+        write_u32be(obj, 80, 0)
+        write_u32be(obj, 84, 0)
+        write_u16be(obj, 88, ACTIVE_FLAG_ACTIVE | ACTIVE_FLAG_UNK8)
+        write_u16be(obj, 90, GRAPH_RENDER_ACTIVE | GRAPH_RENDER_HAS_ANIMATION)
+        write_u32be(obj, 92, 0xFFFFFFFF)
+        obj[96] = 0
+        obj[97:100] = b"\x00" * 3
+        obj[100:108] = b"\x00" * 8
+        obj[108:140] = b"\x00" * 32
         rx[OBJECT_OFFSET:OBJECT_OFFSET + OBJECT_BLOCK_SIZE] = obj
         self.frame += 1
         return rx

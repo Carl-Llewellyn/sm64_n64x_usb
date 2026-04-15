@@ -74,9 +74,17 @@ static void usb_print_incoming(const u8 *data) {
     print_text(0, y, gBuf);
     y += 20;
 
-    sprintf(gBuf, "id%lu fr%lu",
+    sprintf(gBuf, "le%lu lo%lu tx%lu",
+            (unsigned long)syncDebug.localEligibleCount,
+            (unsigned long)syncDebug.localOwnedCount,
+            (unsigned long)syncDebug.localTxEnqueueCount);
+    print_text(0, y, gBuf);
+    y += 20;
+
+    sprintf(gBuf, "id%lu fr%lu lx%lu",
             (unsigned long)syncDebug.lastRemoteSyncId,
-            (unsigned long)syncDebug.lastRemoteFrame);
+            (unsigned long)syncDebug.lastRemoteFrame,
+            (unsigned long)syncDebug.lastLocalTxSyncId);
     print_text(0, y, gBuf);
     y += 20;
 

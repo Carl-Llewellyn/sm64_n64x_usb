@@ -11,6 +11,7 @@
 #include "object_fields.h"
 #include "sm64_usb_protocol.h"
 #include "spawn_object.h"
+#include "usb_comm.h"
 
 #define SYNC_LOCAL_PLAYER_SLOT 0
 #define SYNC_AUTHORITY_LOCAL 1
@@ -25,6 +26,7 @@ static u8 sSyncTxPackets[SYNC_OBJECT_TX_QUEUE_CAPACITY][SYNC_OBJECT_PACKET_SIZE]
 static u32 sSyncTxReadIndex = 0;
 static u32 sSyncTxWriteIndex = 0;
 static u32 sSyncTxCount = 0;
+static u32 sSyncTxScheduleCursor = 0;
 static struct SyncObjectDebugState sSyncDebugState;
 
 static s32 sync_object_find_slot_by_id(u32 syncId);
@@ -32,6 +34,9 @@ static struct SyncObject *sync_object_attach_remote(struct Object *o, u32 syncId
                                                     const BehaviorScript *behavior,
                                                     u8 ownerSlot, u8 authority, u32 frame);
 static struct Object *sync_object_spawn_remote(const u8 *packet);
+static u32 sync_object_read_extra_field_value(const void *field, u8 sizeBits);
+static void sync_object_write_extra_field_value(void *field, u8 sizeBits, u32 value);
+static f32 sync_object_distance_sq_to_point(const struct Object *o, f32 x, f32 y, f32 z);
 
 static s32 sync_object_frame_is_newer(u32 a, u32 b) {
     return (s32)(a - b) > 0;
@@ -104,6 +109,21 @@ static u8 sync_object_enqueue_packet(const u8 *packet) {
     return TRUE;
 }
 
+static f32 sync_object_distance_sq_to_point(const struct Object *o, f32 x, f32 y, f32 z) {
+    f32 dx;
+    f32 dy;
+    f32 dz;
+
+    if (o == NULL) {
+        return 0.0f;
+    }
+
+    dx = x - o->oPosX;
+    dy = y - o->oPosY;
+    dz = z - o->oPosZ;
+    return dx * dx + dy * dy + dz * dz;
+}
+
 void sync_object_get_debug_state(struct SyncObjectDebugState *out) {
     if (out == NULL) {
         return;
@@ -146,14 +166,15 @@ void sync_object_get_debug_state(struct SyncObjectDebugState *out) {
  *   88 activeFlags (s16 be)
  *   90 nodeFlags   (s16 be)
  *   92 intangibleTimer (s32 be)
- *   96 extraField0 (u32 be)
- *   100 extraField1 (u32 be)
+ *   96 extraFieldCount (u8)
+ *   97-99 reserved
+ *   100 extraFieldSizes[8] (u8 each, bits: 8/16/32)
+ *   108 extraFieldData[8] (u32 be each)
  */
 static u8 sync_object_serialize(const struct SyncObject *so, u8 *out) {
     const struct Object *o;
     u32 coopFlags;
-    u32 extra0 = 0;
-    u32 extra1 = 0;
+    u32 i;
 
     if (so == NULL || so->o == NULL || out == NULL) {
         return FALSE;
@@ -200,16 +221,64 @@ static u8 sync_object_serialize(const struct SyncObject *so, u8 *out) {
     sm64usb_write_be16(&out[90], (u16)o->header.gfx.node.flags);
     sm64usb_write_be32(&out[92], (u32)o->oIntangibleTimer);
 
-    if (so->extraFieldCount > 0 && so->extraFields[0] != NULL) {
-        extra0 = *(u32 *)so->extraFields[0];
+    out[96] = so->extraFieldCount;
+    out[97] = 0;
+    out[98] = 0;
+    out[99] = 0;
+
+    for (i = 0; i < SYNC_OBJECT_EXTRA_FIELDS_MAX; i++) {
+        out[100 + i] = 0;
+        sm64usb_write_be32(&out[108 + (i * 4)], 0);
     }
-    if (so->extraFieldCount > 1 && so->extraFields[1] != NULL) {
-        extra1 = *(u32 *)so->extraFields[1];
+
+    for (i = 0; i < so->extraFieldCount && i < SYNC_OBJECT_EXTRA_FIELDS_MAX; i++) {
+        if (so->extraFields[i] == NULL) {
+            continue;
+        }
+        out[100 + i] = so->extraFieldSizes[i];
+        sm64usb_write_be32(&out[108 + (i * 4)],
+                           sync_object_read_extra_field_value(so->extraFields[i],
+                                                              so->extraFieldSizes[i]));
     }
-    sm64usb_write_be32(&out[96], extra0);
-    sm64usb_write_be32(&out[100], extra1);
 
     return TRUE;
+}
+
+static u32 sync_object_read_extra_field_value(const void *field, u8 sizeBits) {
+    if (field == NULL) {
+        return 0;
+    }
+
+    switch (sizeBits) {
+        case 8:
+            return *(const u8 *)field;
+        case 16:
+            return *(const u16 *)field;
+        case 32:
+            return *(const u32 *)field;
+        default:
+            return 0;
+    }
+}
+
+static void sync_object_write_extra_field_value(void *field, u8 sizeBits, u32 value) {
+    if (field == NULL) {
+        return;
+    }
+
+    switch (sizeBits) {
+        case 8:
+            *(u8 *)field = (u8)value;
+            break;
+        case 16:
+            *(u16 *)field = (u16)value;
+            break;
+        case 32:
+            *(u32 *)field = value;
+            break;
+        default:
+            break;
+    }
 }
 
 static void sync_object_apply_remote_state(struct SyncObject *so, const u8 *packet) {
@@ -273,6 +342,7 @@ static void sync_object_apply_remote_state(struct SyncObject *so, const u8 *pack
     so->authority = authority;
     so->lastRecvFrame = frame;
     so->lastUpdateFrame = gGlobalTimer;
+    so->ownedLocally = FALSE;
 
     o->oAction = (s32)sm64usb_read_be32(&packet[16]);
     o->oSubAction = (s32)sm64usb_read_be32(&packet[20]);
@@ -306,11 +376,13 @@ static void sync_object_apply_remote_state(struct SyncObject *so, const u8 *pack
     o->header.gfx.angle[2] = faceRoll;
     o->header.gfx.areaIndex = packet[72];
 
-    if (so->extraFieldCount > 0 && so->extraFields[0] != NULL) {
-        *(u32 *)so->extraFields[0] = (u32)sm64usb_read_be32(&packet[96]);
-    }
-    if (so->extraFieldCount > 1 && so->extraFields[1] != NULL) {
-        *(u32 *)so->extraFields[1] = (u32)sm64usb_read_be32(&packet[100]);
+    {
+        u32 packetExtraCount = packet[96];
+        u32 i;
+        for (i = 0; i < packetExtraCount && i < so->extraFieldCount && i < SYNC_OBJECT_EXTRA_FIELDS_MAX; i++) {
+            sync_object_write_extra_field_value(so->extraFields[i], so->extraFieldSizes[i],
+                                                (u32)sm64usb_read_be32(&packet[108 + (i * 4)]));
+        }
     }
 
     sSyncDebugState.remoteApplyCount++;
@@ -407,9 +479,16 @@ static struct SyncObject *sync_object_attach_remote(struct Object *o, u32 syncId
     so->authority = authority;
     so->valid = TRUE;
     so->dirty = FALSE;
+    so->ownedLocally = FALSE;
     so->extraFieldCount = 0;
-    so->extraFields[0] = NULL;
-    so->extraFields[1] = NULL;
+    so->overrideOwnership = NULL;
+    {
+        u32 i;
+        for (i = 0; i < SYNC_OBJECT_EXTRA_FIELDS_MAX; i++) {
+            so->extraFields[i] = NULL;
+            so->extraFieldSizes[i] = 0;
+        }
+    }
 
     o->oSyncID = syncId;
     o->oSyncDeath = 0;
@@ -525,19 +604,31 @@ void sync_object_system_reset(void) {
         sSyncObjects[i].authority = 0;
         sSyncObjects[i].valid = FALSE;
         sSyncObjects[i].dirty = FALSE;
+        sSyncObjects[i].ownedLocally = FALSE;
         sSyncObjects[i].extraFieldCount = 0;
-        sSyncObjects[i].extraFields[0] = NULL;
-        sSyncObjects[i].extraFields[1] = NULL;
+        sSyncObjects[i].overrideOwnership = NULL;
+        {
+            u32 j;
+            for (j = 0; j < SYNC_OBJECT_EXTRA_FIELDS_MAX; j++) {
+                sSyncObjects[i].extraFields[j] = NULL;
+                sSyncObjects[i].extraFieldSizes[j] = 0;
+            }
+        }
     }
 
     sSyncTxReadIndex = 0;
     sSyncTxWriteIndex = 0;
     sSyncTxCount = 0;
+    sSyncTxScheduleCursor = 0;
 
     sSyncDebugState.remoteSpawnCount = 0;
     sSyncDebugState.remoteApplyCount = 0;
     sSyncDebugState.remoteDeleteCount = 0;
     sSyncDebugState.remoteActiveCount = 0;
+    sSyncDebugState.localEligibleCount = 0;
+    sSyncDebugState.localOwnedCount = 0;
+    sSyncDebugState.localTxEnqueueCount = 0;
+    sSyncDebugState.lastLocalTxSyncId = 0;
     sSyncDebugState.lastRemoteSyncId = 0;
     sSyncDebugState.lastRemoteFrame = 0;
     sSyncDebugState.lastRemotePosX = 0;
@@ -555,12 +646,15 @@ void sync_object_system_update(void) {
     s32 i;
     u32 now = gGlobalTimer;
     u32 remoteActiveCount = 0;
+    u32 localEligibleCount = 0;
+    u32 localOwnedCount = 0;
+    s32 selectedSlot = -1;
+    u32 selectedHash = 0;
+    u8 packet[SYNC_OBJECT_PACKET_SIZE];
 
     for (i = 0; i < SYNC_OBJECT_POOL_CAPACITY; i++) {
         struct SyncObject *so = &sSyncObjects[i];
         struct Object *o;
-        u32 hash;
-        u8 packet[SYNC_OBJECT_PACKET_SIZE];
 
         if (!so->valid || so->o == NULL) {
             continue;
@@ -582,25 +676,62 @@ void sync_object_system_update(void) {
             continue;
         }
 
+        so->ownedLocally = sync_object_should_own(so->id);
+        localOwnedCount += so->ownedLocally ? 1u : 0u;
         so->authority = SYNC_AUTHORITY_LOCAL;
 
-        hash = sync_object_compute_hash(o);
-        so->dirty = (hash != so->lastSyncHash);
-        if (!so->dirty && (now - so->lastSentFrame) < SYNC_RESEND_INTERVAL) {
-            continue;
-        }
+        localEligibleCount++;
+        so->dirty = (sync_object_compute_hash(o) != so->lastSyncHash);
+    }
 
-        if (sync_object_serialize(so, packet)) {
-            if (sync_object_enqueue_packet(packet)) {
-                so->lastSyncHash = hash;
-                so->lastSentFrame = now;
-                so->lastUpdateFrame = now;
-                so->dirty = FALSE;
+    if (sSyncTxCount == 0) {
+        for (i = 0; i < SYNC_OBJECT_POOL_CAPACITY; i++) {
+            s32 slot = (s32)((sSyncTxScheduleCursor + i) % SYNC_OBJECT_POOL_CAPACITY);
+            struct SyncObject *so = &sSyncObjects[slot];
+            struct Object *o;
+
+            if (!so->valid || so->o == NULL) {
+                continue;
             }
+
+            o = so->o;
+            if (!(o->activeFlags & ACTIVE_FLAG_ACTIVE)) {
+                continue;
+            }
+            if (o->oCoopFlags & COOP_OBJ_FLAG_NON_SYNC) {
+                continue;
+            }
+            if (so->ownerSlot != SYNC_LOCAL_PLAYER_SLOT || !so->ownedLocally) {
+                continue;
+            }
+
+            selectedHash = sync_object_compute_hash(o);
+            if (selectedHash == so->lastSyncHash && (now - so->lastSentFrame) < SYNC_RESEND_INTERVAL) {
+                continue;
+            }
+
+            selectedSlot = slot;
+            break;
+        }
+    }
+
+    if (selectedSlot >= 0) {
+        struct SyncObject *so = &sSyncObjects[selectedSlot];
+
+        if (sync_object_serialize(so, packet) && sync_object_enqueue_packet(packet)) {
+            so->lastSyncHash = selectedHash;
+            so->lastSentFrame = now;
+            so->lastUpdateFrame = now;
+            so->dirty = FALSE;
+            sSyncTxScheduleCursor = (u32)(selectedSlot + 1) % SYNC_OBJECT_POOL_CAPACITY;
+            sSyncDebugState.localTxEnqueueCount++;
+            sSyncDebugState.lastLocalTxSyncId = so->id;
         }
     }
 
     sSyncDebugState.remoteActiveCount = remoteActiveCount;
+    sSyncDebugState.localEligibleCount = localEligibleCount;
+    sSyncDebugState.localOwnedCount = localOwnedCount;
 }
 
 u32 sync_object_generate_id(void) {
@@ -641,6 +772,74 @@ u8 sync_object_is_initialized(u32 syncId) {
         return FALSE;
     }
     return (so->o->oCoopFlags & COOP_OBJ_FLAG_INITIALIZED) != 0;
+}
+
+u8 sync_object_is_owned_locally(u32 syncId) {
+    struct SyncObject *so = sync_object_get(syncId);
+    u8 shouldOverride = FALSE;
+    u8 shouldOwn = FALSE;
+
+    if (so == NULL) {
+        return FALSE;
+    }
+    if (so->overrideOwnership != NULL) {
+        so->overrideOwnership(&shouldOverride, &shouldOwn);
+        if (shouldOverride) {
+            return shouldOwn;
+        }
+    }
+
+    return so->ownedLocally;
+}
+
+u8 sync_object_should_own(u32 syncId) {
+    struct SyncObject *so = sync_object_get(syncId);
+    f32 localDist2;
+    u8 shouldOverride = FALSE;
+    u8 shouldOwn = FALSE;
+    u8 slot;
+
+    if (so == NULL || so->o == NULL) {
+        return FALSE;
+    }
+    if (so->overrideOwnership != NULL) {
+        so->overrideOwnership(&shouldOverride, &shouldOwn);
+        if (shouldOverride) {
+            return shouldOwn;
+        }
+    }
+
+    if (so->ownerSlot != SYNC_LOCAL_PLAYER_SLOT) {
+        return FALSE;
+    }
+
+    if (so->o->oHeldState == HELD_HELD && so->o->heldByPlayerIndex == 0) {
+        return TRUE;
+    }
+    if (so->o->oHeldState == HELD_HELD && so->o->heldByPlayerIndex != 0) {
+        return FALSE;
+    }
+    if (gMarioObject == NULL) {
+        return TRUE;
+    }
+
+    localDist2 = sync_object_distance_sq_to_point(so->o, gMarioObject->oPosX, gMarioObject->oPosY,
+                                                  gMarioObject->oPosZ);
+
+    for (slot = 1; slot < MAX_PLAYERS; slot++) {
+        f32 remoteX;
+        f32 remoteY;
+        f32 remoteZ;
+
+        if (!usb_comm_get_remote_position(slot, &remoteX, &remoteY, &remoteZ)) {
+            continue;
+        }
+        if (sync_object_distance_sq_to_point(so->o, remoteX, remoteY, remoteZ) < localDist2) {
+            return FALSE;
+        }
+    }
+
+    return TRUE;
 }
 
 u8 sync_object_should_update_locally(struct Object *o) {
@@ -715,9 +914,16 @@ struct SyncObject *sync_object_init(struct Object *o, f32 maxSyncDistance) {
     so->authority = SYNC_AUTHORITY_LOCAL;
     so->valid = TRUE;
     so->dirty = TRUE;
+    so->ownedLocally = TRUE;
     so->extraFieldCount = 0;
-    so->extraFields[0] = NULL;
-    so->extraFields[1] = NULL;
+    so->overrideOwnership = NULL;
+    {
+        u32 i;
+        for (i = 0; i < SYNC_OBJECT_EXTRA_FIELDS_MAX; i++) {
+            so->extraFields[i] = NULL;
+            so->extraFieldSizes[i] = 0;
+        }
+    }
 
     o->oSyncID = syncId;
     o->oSyncDeath = 0;
@@ -727,6 +933,10 @@ struct SyncObject *sync_object_init(struct Object *o, f32 maxSyncDistance) {
 }
 
 void sync_object_init_field(struct Object *o, void *field) {
+    sync_object_init_field_with_size(o, field, 32);
+}
+
+void sync_object_init_field_with_size(struct Object *o, void *field, u8 size) {
     struct SyncObject *so;
 
     if (o == NULL || field == NULL) {
@@ -743,11 +953,15 @@ void sync_object_init_field(struct Object *o, void *field) {
     if (so == NULL || so->o != o) {
         return;
     }
+    if (!(size == 8 || size == 16 || size == 32)) {
+        return;
+    }
     if (so->extraFieldCount >= SYNC_OBJECT_EXTRA_FIELDS_MAX) {
         return;
     }
 
     so->extraFields[so->extraFieldCount] = field;
+    so->extraFieldSizes[so->extraFieldCount] = size;
     so->extraFieldCount++;
 }
 
@@ -780,9 +994,16 @@ void sync_object_forget(struct Object *o) {
     sSyncObjects[slot].authority = 0;
     sSyncObjects[slot].valid = FALSE;
     sSyncObjects[slot].dirty = FALSE;
+    sSyncObjects[slot].ownedLocally = FALSE;
     sSyncObjects[slot].extraFieldCount = 0;
-    sSyncObjects[slot].extraFields[0] = NULL;
-    sSyncObjects[slot].extraFields[1] = NULL;
+    sSyncObjects[slot].overrideOwnership = NULL;
+    {
+        u32 i;
+        for (i = 0; i < SYNC_OBJECT_EXTRA_FIELDS_MAX; i++) {
+            sSyncObjects[slot].extraFields[i] = NULL;
+            sSyncObjects[slot].extraFieldSizes[i] = 0;
+        }
+    }
 
     o->oSyncID = SYNC_ID_NONE;
     o->oSyncDeath = 0;
